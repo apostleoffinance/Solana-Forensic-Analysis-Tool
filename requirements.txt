@@ -1,0 +1,18 @@
+pandas
+numpy 
+requests
+heliuspy 
+sqlalchemy 
+networkx
+matplotlib
+scikit-learn
+xgboost
+pyod   # For anomaly detection
+statsmodels
+graphviz
+heliuspy
+helius
+certifi
+charset-normalizer
+idna
+urllib3
