@@ -9,10 +9,13 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "d3": "^7.9.0",
+    "@three-ts/orbit-controls": "^1.4.7",
+    "cytoscape": "^3.31.2",
+    "gsap": "^3.12.7",
     "next": "15.2.4",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "three": "^0.175.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
