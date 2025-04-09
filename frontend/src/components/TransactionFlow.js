@@ -1,122 +1,127 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import * as d3 from 'd3';
+import cytoscape from 'cytoscape';
 
 export default function TransactionFlow({ transactions }) {
-  const svgRef = useRef();
+  const containerRef = useRef(null); // Explicitly initialize as null
+  const cyRef = useRef(null); // Store Cytoscape instance
   const [dateFilter, setDateFilter] = useState('');
   const [amountFilter, setAmountFilter] = useState(0);
 
   useEffect(() => {
-    const svg = d3.select(svgRef.current)
-      .attr('width', 800)
-      .attr('height', 400)
-      .style('border', '1px solid #ccc');
+    // Ensure container exists before initializing
+    if (!containerRef.current) return;
 
-    const filtered = transactions.filter(tx => 
-      (!dateFilter || tx.date === dateFilter) && 
-      tx.amount >= amountFilter
+    // Destroy previous instance if it exists
+    if (cyRef.current) {
+      cyRef.current.destroy();
+      cyRef.current = null;
+    }
+
+    // Filter transactions
+    const filtered = transactions.filter(
+      (tx) =>
+        (!dateFilter || tx.date === dateFilter) && tx.amount >= amountFilter
     );
 
-    svg.selectAll('*').remove();
-
-    const nodes = [...new Set(filtered.flatMap(tx => [tx.source, tx.target]))];
-    const links = filtered.map(tx => ({ 
-      source: tx.source, 
-      target: tx.target, 
-      amount: tx.amount, 
-      critical: tx.critical 
-    }));
-
-    const simulation = d3.forceSimulation(nodes.map(id => ({ id })))
-      .force('link', d3.forceLink(links).id(d => d.id))
-      .force('charge', d3.forceManyBody().strength(-200))
-      .force('center', d3.forceCenter(400, 200));
-
-    const link = svg.append('g')
-      .selectAll('line')
-      .data(links)
-      .enter()
-      .append('line')
-      .attr('stroke', d => d.critical ? 'red' : 'gray')
-      .attr('stroke-width', d => Math.sqrt(d.amount));
-
-    const node = svg.append('g')
-      .selectAll('circle')
-      .data(simulation.nodes())
-      .enter()
-      .append('circle')
-      .attr('r', 10)
-      .attr('fill', 'blue')
-      .call(drag(simulation)); // Updated to use a separate drag function
-
-    const label = svg.append('g')
-      .selectAll('text')
-      .data(simulation.nodes())
-      .enter()
-      .append('text')
-      .text(d => d.id)
-      .attr('dx', 12)
-      .attr('dy', 4);
-
-    simulation.on('tick', () => {
-      link
-        .attr('x1', d => d.source.x)
-        .attr('y1', d => d.source.y)
-        .attr('x2', d => d.target.x)
-        .attr('y2', d => d.target.y);
-      node
-        .attr('cx', d => d.x)
-        .attr('cy', d => d.y);
-      label
-        .attr('x', d => d.x)
-        .attr('y', d => d.y);
+    // Initialize Cytoscape
+    const cy = cytoscape({
+      container: containerRef.current,
+      elements: generateElements(filtered),
+      style: [
+        {
+          selector: 'node',
+          style: {
+            'background-color': 'blue',
+            'label': 'data(id)',
+            'width': 20,
+            'height': 20,
+            'font-size': '12px',
+            'text-valign': 'center',
+            'text-halign': 'center',
+            'text-wrap': 'wrap',
+            'text-max-width': '100px',
+          },
+        },
+        {
+          selector: 'edge',
+          style: {
+            'width': (ele) => Math.sqrt(ele.data('amount')) || 1,
+            'line-color': (ele) => (ele.data('critical') ? 'red' : 'gray'),
+            'target-arrow-color': (ele) => (ele.data('critical') ? 'red' : 'gray'),
+            'target-arrow-shape': 'triangle',
+            'curve-style': 'bezier',
+          },
+        },
+      ],
+      layout: {
+        name: 'cose',
+        animate: true,
+        nodeRepulsion: () => 400000,
+        idealEdgeLength: () => 100,
+        fit: true,
+        padding: 30,
+      },
     });
+
+    cy.nodes().grabify(); // Enable dragging
+    cyRef.current = cy; // Store instance
+
+    // Cleanup on unmount or update
+    return () => {
+      if (cyRef.current) {
+        cyRef.current.destroy();
+        cyRef.current = null;
+      }
+    };
   }, [transactions, dateFilter, amountFilter]);
-
-  // Define drag behavior as a separate function
-  function drag(simulation) {
-    function dragStarted(event, d) {
-      if (!event.active) simulation.alphaTarget(0.3).restart();
-      d.fx = d.x;
-      d.fy = d.y;
-    }
-
-    function dragged(event, d) {
-      d.fx = event.x;
-      d.fy = event.y;
-    }
-
-    function dragEnded(event, d) {
-      if (!event.active) simulation.alphaTarget(0);
-      d.fx = null;
-      d.fy = null;
-    }
-
-    return d3.drag()
-      .on('start', dragStarted)
-      .on('drag', dragged)
-      .on('end', dragEnded);
-  }
 
   return (
     <div>
       <h2>Transaction Flow</h2>
       <div>
         <label>Date Filter: </label>
-        <input 
-          type="date" 
-          onChange={e => setDateFilter(e.target.value.replaceAll('-', '-'))} 
+        <input
+          type="date"
+          onChange={(e) => setDateFilter(e.target.value.replaceAll('-', '-'))}
         />
         <label> Min Amount: </label>
-        <input 
-          type="number" 
-          min="0" 
-          value={amountFilter} 
-          onChange={e => setAmountFilter(Number(e.target.value))} 
+        <input
+          type="number"
+          min="0"
+          value={amountFilter}
+          onChange={(e) => setAmountFilter(Number(e.target.value))}
         />
       </div>
-      <svg ref={svgRef}></svg>
+      <div
+        ref={containerRef}
+        style={{ width: '800px', height: '400px', border: '1px solid #ccc' }}
+      />
     </div>
   );
+}
+
+function generateElements(transactions) {
+  const nodes = new Set();
+  const edges = [];
+
+  transactions.forEach((tx, idx) => {
+    nodes.add(tx.source);
+    nodes.add(tx.target);
+    edges.push({
+      data: {
+        key: `${idx}`,
+        id: `${tx.source}-${tx.target}-${tx.amount}`,
+        source: tx.source,
+        target: tx.target,
+        amount: tx.amount,
+        critical: tx.critical,
+      },
+    });
+  });
+
+  return [
+    ...Array.from(nodes).map((id) => ({ data: { id } })),
+    ...edges,
+  ];
 }

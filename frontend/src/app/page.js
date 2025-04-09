@@ -28,9 +28,9 @@ export default function Home() {
     <div style={{ padding: '20px' }}>
       <h1>Solana Forensic Analysis Tool</h1>
       <TransactionFlow transactions={mockTransactions} />
-      <WalletAnalysis wallets={mockWallets} />
+      {/* <WalletAnalysis wallets={mockWallets} />
       <TransactionClusters clusters={mockClusters} />
-      <EntityLabels entities={mockEntities} />
+      <EntityLabels entities={mockEntities} /> */}
     </div>
   );
 }
