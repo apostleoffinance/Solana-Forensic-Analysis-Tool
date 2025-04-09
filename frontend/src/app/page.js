@@ -4,11 +4,12 @@ import { getMockTransactions } from '../api/transactionFlow';
 import { getMockWallets } from '../api/walletAnalysis';
 import { getMockClusters } from '../api/transactionClusters';
 import { getMockEntities } from '../api/entityLabels';
+import TransactionFlow from '../components/TransactionFlow';
 
 export default function Home() {
-  const TransactionFlow = dynamic(() => import('../components/TransactionFlow'), {
-    ssr: false
-  });
+  // const TransactionFlow = dynamic(() => import('../components/TransactionFlow'), {
+  //   ssr: false
+  // });
   const WalletAnalysis = dynamic(() => import('../components/WalletAnalysis'), {
     ssr: false
   });
