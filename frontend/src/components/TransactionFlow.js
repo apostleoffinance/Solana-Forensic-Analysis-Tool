@@ -1,5 +1,6 @@
+// src/components/TransactionFlow.js
 'use client';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { gsap } from 'gsap';
 
@@ -20,6 +21,8 @@ const TransactionFlow = ({
   const tooltipRef = useRef(null);
   const infoCardRef = useRef(null);
   const animationFrameId = useRef(null);
+  const [dateFilter, setDateFilter] = useState(''); // State for date filter
+  const [amountFilter, setAmountFilter] = useState(0); // State for amount filter
 
   useEffect(() => {
     if (!containerRef.current || !transactions) return;
@@ -35,7 +38,7 @@ const TransactionFlow = ({
 
     const camera = new THREE.PerspectiveCamera(75, containerWidth / containerHeight, 0.1, 1000);
     cameraRef.current = camera;
-    camera.position.z = 8;
+    camera.position.z = 12; // Adjusted for larger graph
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     rendererRef.current = renderer;
@@ -56,6 +59,13 @@ const TransactionFlow = ({
     container.appendChild(infoCard);
     infoCardRef.current = infoCard;
 
+    // Filter Transactions
+    let filteredTransactions = transactions.filter(tx => {
+      const matchesDate = dateFilter ? tx.date === dateFilter : true;
+      const matchesAmount = tx.amount >= amountFilter;
+      return matchesDate && matchesAmount;
+    });
+
     // Transaction System Setup
     const transactionSystem = new THREE.Group();
     transactionSystemRef.current = transactionSystem;
@@ -63,12 +73,12 @@ const TransactionFlow = ({
 
     // Find Hacker Address
     let hackerAddress = null;
-    const hackerTx = transactions.find(tx => tx.entity === 'Hacker');
+    const hackerTx = filteredTransactions.find(tx => tx.entity === 'Hacker');
     if (hackerTx) {
       hackerAddress = hackerTx.target;
     } else {
       const criticalAddresses = new Map();
-      transactions.filter(tx => tx.critical).forEach(tx => {
+      filteredTransactions.filter(tx => tx.critical).forEach(tx => {
         criticalAddresses.set(tx.source, (criticalAddresses.get(tx.source) || 0) + 1);
         criticalAddresses.set(tx.target, (criticalAddresses.get(tx.target) || 0) + 1);
       });
@@ -80,15 +90,15 @@ const TransactionFlow = ({
         }
       });
     }
-    if (!hackerAddress && transactions.some(tx => tx.critical)) {
-      hackerAddress = transactions.find(tx => tx.critical).target;
+    if (!hackerAddress && filteredTransactions.some(tx => tx.critical)) {
+      hackerAddress = filteredTransactions.find(tx => tx.critical).target;
     }
-    if (!hackerAddress && transactions.length > 0) {
-      hackerAddress = transactions[0].target;
+    if (!hackerAddress && filteredTransactions.length > 0) {
+      hackerAddress = filteredTransactions[0].target;
     }
 
     const addresses = new Set();
-    transactions.forEach(tx => {
+    filteredTransactions.forEach(tx => {
       addresses.add(tx.source);
       addresses.add(tx.target);
     });
@@ -108,7 +118,7 @@ const TransactionFlow = ({
       address: hackerAddress, 
       isHacker: true,
       entity: 'Hacker',
-      transactions: transactions.filter(tx => tx.source === hackerAddress || tx.target === hackerAddress)
+      transactions: filteredTransactions.filter(tx => tx.source === hackerAddress || tx.target === hackerAddress)
     };
     hackerNodeRef.current = hackerNode;
     transactionSystem.add(hackerNode);
@@ -146,12 +156,12 @@ const TransactionFlow = ({
       const angleStep = (Math.PI * 2) / Math.min(addressList.length, 12);
       const angle = angleStep * (index % 12);
       const layer = Math.floor(index / 12);
-      const radius = 3 + layer * 1.5;
+      const radius = 4 + layer * 2; // Adjusted for larger graph
       const x = Math.cos(angle) * radius;
       const y = Math.sin(angle) * radius;
       const z = (layer * 0.5) - 1;
-      const isCritical = transactions.some(tx => (tx.source === address || tx.target === address) && tx.critical);
-      const entityTx = transactions.find(tx => (tx.source === address || tx.target === address) && tx.entity);
+      const isCritical = filteredTransactions.some(tx => (tx.source === address || tx.target === address) && tx.critical);
+      const entityTx = filteredTransactions.find(tx => (tx.source === address || tx.target === address) && tx.entity);
       const entity = entityTx ? entityTx.entity : 'Unknown';
 
       const nodeGeometry = new THREE.BufferGeometry();
@@ -171,7 +181,7 @@ const TransactionFlow = ({
         address, 
         isCritical,
         entity,
-        transactions: transactions.filter(tx => tx.source === address || tx.target === address)
+        transactions: filteredTransactions.filter(tx => tx.source === address || tx.target === address)
       };
       transactionSystem.add(node);
 
@@ -190,7 +200,7 @@ const TransactionFlow = ({
     // Transaction Lines
     const transactionLines = [];
     transactionLinesRef.current = transactionLines;
-    transactions.forEach(tx => {
+    filteredTransactions.forEach(tx => {
       const createConnection = (sourcePos, targetPos, critical) => {
         const points = [sourcePos, targetPos];
         const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
@@ -232,7 +242,6 @@ const TransactionFlow = ({
       return ring;
     };
     const orbitalRings = [
-      createOrbitalRing(3, 0x84CC16, 0.3),
       createOrbitalRing(4.5, 0x84CC16, 0.2),
       createOrbitalRing(6, 0x84CC16, 0.1),
     ];
@@ -246,14 +255,13 @@ const TransactionFlow = ({
 
     // Animation
     let time = 0;
-    let isSpinning = true; // Flag to control spinning
+    let isSpinning = true;
 
     const animate = () => {
       time += 0.01;
 
-      // Spin only if not hovering
       if (isSpinning) {
-        transactionSystem.rotation.y += 0.005; // Match speed from HTML example
+        transactionSystem.rotation.y += 0.005;
       }
 
       if (hackerNodeRef.current) {
@@ -301,7 +309,7 @@ const TransactionFlow = ({
           const address = hoveredNode.userData.address;
           if (address !== hoveredAddress) {
             hoveredAddress = address;
-            isSpinning = false; // Stop spinning on hover
+            isSpinning = false;
 
             const entity = hoveredNode.userData.entity || 'Unknown';
             const isCritical = hoveredNode.userData.isCritical;
@@ -337,7 +345,7 @@ const TransactionFlow = ({
             gsap.to(prevHoveredNode.material, { size: 0.2, opacity: 0.8, duration: 0.3 });
           }
           hoveredAddress = null;
-          isSpinning = true; // Resume spinning when hover ends
+          isSpinning = true;
           tooltipRef.current.style.display = 'none';
           transactionLines.forEach(line => {
             gsap.to(line.material, { opacity: line.userData.transaction.critical ? 0.6 : 0.4, duration: 0.3 });
@@ -349,7 +357,7 @@ const TransactionFlow = ({
           gsap.to(prevHoveredNode.material, { size: 0.2, opacity: 0.8, duration: 0.3 });
         }
         hoveredAddress = null;
-        isSpinning = true; // Resume spinning when mouse leaves container
+        isSpinning = true;
         tooltipRef.current.style.display = 'none';
       }
     };
@@ -504,10 +512,31 @@ const TransactionFlow = ({
         sceneRef.current.clear();
       }
     };
-  }, [transactions]);
+  }, [transactions, dateFilter, amountFilter]); // Re-run effect when filters change
 
   return (
     <div className={`solana-transaction-flow ${className}`} style={{ width, height, position: 'relative' }}>
+      <div className="filters flex space-x-4 mb-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-300 mb-1">Date Filter</label>
+          <input
+            type="date"
+            value={dateFilter}
+            onChange={(e) => setDateFilter(e.target.value)}
+            className="p-2 rounded-md bg-gray-800 text-white border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-300 mb-1">Min Amount</label>
+          <input
+            type="number"
+            min="0"
+            value={amountFilter}
+            onChange={(e) => setAmountFilter(Number(e.target.value))}
+            className="p-2 rounded-md bg-gray-800 text-white border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+      </div>
       <div ref={containerRef} className="transaction-canvas w-full h-full" />
       <style jsx>{`
         .solana-transaction-flow {
@@ -517,6 +546,9 @@ const TransactionFlow = ({
         }
         .transaction-canvas {
           position: relative;
+        }
+        .filters {
+          padding: 10px;
         }
       `}</style>
       <style jsx global>{`
