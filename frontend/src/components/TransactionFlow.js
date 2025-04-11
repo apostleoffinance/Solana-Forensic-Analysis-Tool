@@ -6,8 +6,6 @@ import { gsap } from 'gsap';
 
 const TransactionFlow = ({ 
   transactions, 
-  width = '1000px',
-  height = '1000px',
   className = ''
 }) => {
   const containerRef = useRef(null);
@@ -21,24 +19,34 @@ const TransactionFlow = ({
   const tooltipRef = useRef(null);
   const infoCardRef = useRef(null);
   const animationFrameId = useRef(null);
-  const [dateFilter, setDateFilter] = useState(''); // State for date filter
-  const [amountFilter, setAmountFilter] = useState(0); // State for amount filter
+  const [dateFilter, setDateFilter] = useState('');
+  const [amountFilter, setAmountFilter] = useState(0);
 
   useEffect(() => {
-    if (!containerRef.current || !transactions) return;
+    if (!containerRef.current || !transactions) {
+
+      return;
+    }
 
     // Scene Setup
     const container = containerRef.current;
     const containerRect = container.getBoundingClientRect();
-    const containerWidth = containerRect.width;
-    const containerHeight = containerRect.height;
+    let containerWidth = containerRect.width;
+    let containerHeight = containerRect.height;
+
+    // Fallback if dimensions are 0
+    if (containerWidth === 0 || containerHeight === 0) {
+      console.warn('Container has zero dimensions, using fallback size');
+      containerWidth = 600;
+      containerHeight = 300;
+    }
 
     const scene = new THREE.Scene();
     sceneRef.current = scene;
 
     const camera = new THREE.PerspectiveCamera(75, containerWidth / containerHeight, 0.1, 1000);
     cameraRef.current = camera;
-    camera.position.z = 12; // Adjusted for larger graph
+    camera.position.z = 12;
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     rendererRef.current = renderer;
@@ -65,6 +73,11 @@ const TransactionFlow = ({
       const matchesAmount = tx.amount >= amountFilter;
       return matchesDate && matchesAmount;
     });
+
+    // Fallback if filteredTransactions is empty
+    if (filteredTransactions.length === 0) {
+      filteredTransactions = transactions;
+    }
 
     // Transaction System Setup
     const transactionSystem = new THREE.Group();
@@ -146,6 +159,7 @@ const TransactionFlow = ({
     if (hackerAddress) {
       const hackerLabel = createTextSprite(hackerAddress, new THREE.Vector3(0, 0, 0), 0xE11D48, 0.6);
       transactionSystem.add(hackerLabel);
+
     }
 
     // Address Nodes (Points)
@@ -156,7 +170,7 @@ const TransactionFlow = ({
       const angleStep = (Math.PI * 2) / Math.min(addressList.length, 12);
       const angle = angleStep * (index % 12);
       const layer = Math.floor(index / 12);
-      const radius = 4 + layer * 2; // Adjusted for larger graph
+      const radius = 4 + layer * 2;
       const x = Math.cos(angle) * radius;
       const y = Math.sin(angle) * radius;
       const z = (layer * 0.5) - 1;
@@ -478,9 +492,11 @@ const TransactionFlow = ({
       for (const entry of entries) {
         if (entry.target === container) {
           const { width, height } = entry.contentRect;
-          camera.aspect = width / height;
-          camera.updateProjectionMatrix();
-          renderer.setSize(width, height);
+          if (width > 0 && height > 0) {
+            camera.aspect = width / height;
+            camera.updateProjectionMatrix();
+            renderer.setSize(width, height);
+          }
         }
       }
     });
@@ -512,10 +528,10 @@ const TransactionFlow = ({
         sceneRef.current.clear();
       }
     };
-  }, [transactions, dateFilter, amountFilter]); // Re-run effect when filters change
+  }, [transactions, dateFilter, amountFilter]);
 
   return (
-    <div className={`solana-transaction-flow ${className}`} style={{ width, height, position: 'relative' }}>
+    <div className={`solana-transaction-flow ${className}`} style={{ width: '100%', height: '100%', position: 'relative' }}>
       <div className="filters flex space-x-4 mb-4">
         <div>
           <label className="block text-sm font-medium text-gray-300 mb-1">Date Filter</label>
@@ -542,10 +558,19 @@ const TransactionFlow = ({
         .solana-transaction-flow {
           background-color: rgba(26, 32, 44, 0.8);
           border-radius: 8px;
-          overflow: hidden;
+          display: flex;
+          flex-direction: column;
         }
         .transaction-canvas {
           position: relative;
+          flex: 1;
+        }
+        .transaction-canvas canvas {
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
         }
         .filters {
           padding: 10px;
