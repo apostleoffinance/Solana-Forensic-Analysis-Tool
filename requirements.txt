@@ -16,3 +16,5 @@ certifi
 charset-normalizer
 idna
 urllib3
+ipykernel # for notebooks
+dotenv
