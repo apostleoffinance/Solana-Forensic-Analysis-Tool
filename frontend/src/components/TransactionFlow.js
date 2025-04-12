@@ -1,12 +1,11 @@
+// src/components/TransactionFlow.js
 'use client';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { gsap } from 'gsap';
 
 const TransactionFlow = ({ 
   transactions, 
-  width = '1000px',
-  height = '1000px',
   className = ''
 }) => {
   const containerRef = useRef(null);
@@ -20,22 +19,33 @@ const TransactionFlow = ({
   const tooltipRef = useRef(null);
   const infoCardRef = useRef(null);
   const animationFrameId = useRef(null);
+  const [dateFilter, setDateFilter] = useState('');
+  const [amountFilter, setAmountFilter] = useState(0);
 
   useEffect(() => {
-    if (!containerRef.current || !transactions) return;
+    if (!containerRef.current || !transactions) {
+      return;
+    }
 
     // Scene Setup
     const container = containerRef.current;
     const containerRect = container.getBoundingClientRect();
-    const containerWidth = containerRect.width;
-    const containerHeight = containerRect.height;
+    let containerWidth = containerRect.width;
+    let containerHeight = containerRect.height;
+
+    // Fallback if dimensions are 0
+    if (containerWidth === 0 || containerHeight === 0) {
+      console.warn('Container has zero dimensions, using fallback size');
+      containerWidth = 600;
+      containerHeight = 300;
+    }
 
     const scene = new THREE.Scene();
     sceneRef.current = scene;
 
     const camera = new THREE.PerspectiveCamera(75, containerWidth / containerHeight, 0.1, 1000);
     cameraRef.current = camera;
-    camera.position.z = 8;
+    camera.position.z = 12;
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     rendererRef.current = renderer;
@@ -56,6 +66,18 @@ const TransactionFlow = ({
     container.appendChild(infoCard);
     infoCardRef.current = infoCard;
 
+    // Filter Transactions
+    let filteredTransactions = transactions.filter(tx => {
+      const matchesDate = dateFilter ? tx.date === dateFilter : true;
+      const matchesAmount = tx.amount >= amountFilter;
+      return matchesDate && matchesAmount;
+    });
+
+    // Fallback if filteredTransactions is empty
+    if (filteredTransactions.length === 0) {
+      filteredTransactions = transactions;
+    }
+
     // Transaction System Setup
     const transactionSystem = new THREE.Group();
     transactionSystemRef.current = transactionSystem;
@@ -63,12 +85,12 @@ const TransactionFlow = ({
 
     // Find Hacker Address
     let hackerAddress = null;
-    const hackerTx = transactions.find(tx => tx.entity === 'Hacker');
+    const hackerTx = filteredTransactions.find(tx => tx.entity === 'Hacker');
     if (hackerTx) {
       hackerAddress = hackerTx.target;
     } else {
       const criticalAddresses = new Map();
-      transactions.filter(tx => tx.critical).forEach(tx => {
+      filteredTransactions.filter(tx => tx.critical).forEach(tx => {
         criticalAddresses.set(tx.source, (criticalAddresses.get(tx.source) || 0) + 1);
         criticalAddresses.set(tx.target, (criticalAddresses.get(tx.target) || 0) + 1);
       });
@@ -80,15 +102,15 @@ const TransactionFlow = ({
         }
       });
     }
-    if (!hackerAddress && transactions.some(tx => tx.critical)) {
-      hackerAddress = transactions.find(tx => tx.critical).target;
+    if (!hackerAddress && filteredTransactions.some(tx => tx.critical)) {
+      hackerAddress = filteredTransactions.find(tx => tx.critical).target;
     }
-    if (!hackerAddress && transactions.length > 0) {
-      hackerAddress = transactions[0].target;
+    if (!hackerAddress && filteredTransactions.length > 0) {
+      hackerAddress = filteredTransactions[0].target;
     }
 
     const addresses = new Set();
-    transactions.forEach(tx => {
+    filteredTransactions.forEach(tx => {
       addresses.add(tx.source);
       addresses.add(tx.target);
     });
@@ -108,7 +130,7 @@ const TransactionFlow = ({
       address: hackerAddress, 
       isHacker: true,
       entity: 'Hacker',
-      transactions: transactions.filter(tx => tx.source === hackerAddress || tx.target === hackerAddress)
+      transactions: filteredTransactions.filter(tx => tx.source === hackerAddress || tx.target === hackerAddress)
     };
     hackerNodeRef.current = hackerNode;
     transactionSystem.add(hackerNode);
@@ -146,12 +168,12 @@ const TransactionFlow = ({
       const angleStep = (Math.PI * 2) / Math.min(addressList.length, 12);
       const angle = angleStep * (index % 12);
       const layer = Math.floor(index / 12);
-      const radius = 3 + layer * 1.5;
+      const radius = 4 + layer * 2;
       const x = Math.cos(angle) * radius;
       const y = Math.sin(angle) * radius;
       const z = (layer * 0.5) - 1;
-      const isCritical = transactions.some(tx => (tx.source === address || tx.target === address) && tx.critical);
-      const entityTx = transactions.find(tx => (tx.source === address || tx.target === address) && tx.entity);
+      const isCritical = filteredTransactions.some(tx => (tx.source === address || tx.target === address) && tx.critical);
+      const entityTx = filteredTransactions.find(tx => (tx.source === address || tx.target === address) && tx.entity);
       const entity = entityTx ? entityTx.entity : 'Unknown';
 
       const nodeGeometry = new THREE.BufferGeometry();
@@ -171,7 +193,7 @@ const TransactionFlow = ({
         address, 
         isCritical,
         entity,
-        transactions: transactions.filter(tx => tx.source === address || tx.target === address)
+        transactions: filteredTransactions.filter(tx => tx.source === address || tx.target === address)
       };
       transactionSystem.add(node);
 
@@ -190,7 +212,7 @@ const TransactionFlow = ({
     // Transaction Lines
     const transactionLines = [];
     transactionLinesRef.current = transactionLines;
-    transactions.forEach(tx => {
+    filteredTransactions.forEach(tx => {
       const createConnection = (sourcePos, targetPos, critical) => {
         const points = [sourcePos, targetPos];
         const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
@@ -223,18 +245,17 @@ const TransactionFlow = ({
     });
 
     // Orbital Rings
-    const createOrbitalRing = (radius, color, opacity) => {
-      const ringGeometry = new THREE.TorusGeometry(radius, 0.05, 16, 100);
-      const ringMaterial = new THREE.MeshBasicMaterial({ color, transparent: true, opacity });
-      const ring = new THREE.Mesh(ringGeometry, ringMaterial);
-      ring.rotation.x = Math.PI / 3;
-      transactionSystem.add(ring);
-      return ring;
-    };
+    // const createOrbitalRing = (radius, color, opacity) => {
+    //   const ringGeometry = new THREE.TorusGeometry(radius, 0.05, 16, 100);
+    //   const ringMaterial = new THREE.MeshBasicMaterial({ color, transparent: true, opacity });
+    //   const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+    //   ring.rotation.x = Math.PI / 3;
+    //   transactionSystem.add(ring);
+    //   return ring;
+    // };
     const orbitalRings = [
-      createOrbitalRing(3, 0x84CC16, 0.3),
-      createOrbitalRing(4.5, 0x84CC16, 0.2),
-      createOrbitalRing(6, 0x84CC16, 0.1),
+      // createOrbitalRing(4.5, 0x84CC16, 0.2),
+      // createOrbitalRing(6, 0x84CC16, 0.1),
     ];
 
     // Lighting
@@ -246,14 +267,13 @@ const TransactionFlow = ({
 
     // Animation
     let time = 0;
-    let isSpinning = true; // Flag to control spinning
+    let isSpinning = true;
 
     const animate = () => {
       time += 0.01;
 
-      // Spin only if not hovering
       if (isSpinning) {
-        transactionSystem.rotation.y += 0.005; // Match speed from HTML example
+        transactionSystem.rotation.y += 0.005;
       }
 
       if (hackerNodeRef.current) {
@@ -301,7 +321,7 @@ const TransactionFlow = ({
           const address = hoveredNode.userData.address;
           if (address !== hoveredAddress) {
             hoveredAddress = address;
-            isSpinning = false; // Stop spinning on hover
+            isSpinning = false;
 
             const entity = hoveredNode.userData.entity || 'Unknown';
             const isCritical = hoveredNode.userData.isCritical;
@@ -337,7 +357,7 @@ const TransactionFlow = ({
             gsap.to(prevHoveredNode.material, { size: 0.2, opacity: 0.8, duration: 0.3 });
           }
           hoveredAddress = null;
-          isSpinning = true; // Resume spinning when hover ends
+          isSpinning = true;
           tooltipRef.current.style.display = 'none';
           transactionLines.forEach(line => {
             gsap.to(line.material, { opacity: line.userData.transaction.critical ? 0.6 : 0.4, duration: 0.3 });
@@ -349,7 +369,7 @@ const TransactionFlow = ({
           gsap.to(prevHoveredNode.material, { size: 0.2, opacity: 0.8, duration: 0.3 });
         }
         hoveredAddress = null;
-        isSpinning = true; // Resume spinning when mouse leaves container
+        isSpinning = true;
         tooltipRef.current.style.display = 'none';
       }
     };
@@ -470,9 +490,11 @@ const TransactionFlow = ({
       for (const entry of entries) {
         if (entry.target === container) {
           const { width, height } = entry.contentRect;
-          camera.aspect = width / height;
-          camera.updateProjectionMatrix();
-          renderer.setSize(width, height);
+          if (width > 0 && height > 0) {
+            camera.aspect = width / height;
+            camera.updateProjectionMatrix();
+            renderer.setSize(width, height);
+          }
         }
       }
     });
@@ -504,19 +526,93 @@ const TransactionFlow = ({
         sceneRef.current.clear();
       }
     };
-  }, [transactions]);
+  }, [transactions, dateFilter, amountFilter]);
 
   return (
-    <div className={`solana-transaction-flow ${className}`} style={{ width, height, position: 'relative' }}>
-      <div ref={containerRef} className="transaction-canvas w-full h-full" />
+    <div className={`solana-transaction-flow ${className}`} style={{ width: '100%', height: '100%', position: 'relative' }}>
+      <div className="filters">
+        <div className="filter-item">
+          <label className="filter-label">Date Filter</label>
+          <input
+            type="date"
+            value={dateFilter}
+            onChange={(e) => setDateFilter(e.target.value)}
+            className="filter-input"
+          />
+        </div>
+        <div className="filter-item">
+          <label className="filter-label">Min Amount</label>
+          <input
+            type="number"
+            min="0"
+            value={amountFilter}
+            onChange={(e) => setAmountFilter(Number(e.target.value))}
+            className="filter-input"
+          />
+        </div>
+      </div>
+      <div ref={containerRef} className="transaction-canvas" />
       <style jsx>{`
         .solana-transaction-flow {
           background-color: rgba(26, 32, 44, 0.8);
           border-radius: 8px;
-          overflow: hidden;
+          display: flex;
+          flex-direction: column;
         }
         .transaction-canvas {
           position: relative;
+          flex: 1;
+        }
+        .transaction-canvas canvas {
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          min-height: 750px;
+        }
+        .filters {
+          display: flex;
+          gap: 1rem; /* Matches the gap used in dashboard-right */
+          padding: 10px;
+          margin-bottom: 1rem; /* Matches the mb-4 spacing */
+        }
+        .filter-item {
+          flex: 1;
+        }
+        .filter-label {
+          display: block;
+          font-size: 0.875rem; /* Matches text-sm */
+          font-weight: 500; /* Matches font-medium */
+          color: var(--text-secondary); /* Matches dashboard text-secondary */
+          margin-bottom: 0.25rem; /* Matches mb-1 */
+        }
+        .filter-input {
+          width: 100%;
+          padding: 0.5rem; /* Matches p-2 */
+          border-radius: 6px; /* Matches rounded-md and other dashboard elements */
+          background-color: var(--card-bg); /* Matches dashboard card background */
+          color: var(--text-primary); /* Matches dashboard text-primary */
+          border: 1px solid var(--border); /* Matches dashboard border */
+          font-size: 0.875rem; /* Matches text-sm */
+          transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+        .filter-input:hover {
+          border-color: #4b5563; /* Slightly lighter than --border for hover effect */
+        }
+        .filter-input:focus {
+          outline: none;
+          border-color: var(--accent-blue); /* Matches dashboard accent-blue */
+          box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5); /* Matches focus:ring-2 focus:ring-blue-500 */
+        }
+        /* Style the date picker icon to match the theme */
+        .filter-input[type="date"]::-webkit-calendar-picker-indicator {
+          filter: invert(1); /* Makes the icon white to match text-primary */
+        }
+        .filter-input[type="number"]::-webkit-inner-spin-button,
+        .filter-input[type="number"]::-webkit-outer-spin-button {
+          opacity: 1;
+          filter: invert(1); /* Makes the spin buttons white to match text-primary */
         }
       `}</style>
       <style jsx global>{`
