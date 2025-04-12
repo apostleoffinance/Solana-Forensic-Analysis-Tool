@@ -122,7 +122,7 @@ body {
 /* Main Grid */
 .dashboard-grid {
   display: grid;
-  grid-template-columns: 1fr 2fr;
+  /* grid-template-columns: 1fr 2fr; */
   gap: 1rem;
   margin-bottom: 1.5rem;
 }
@@ -197,7 +197,7 @@ body {
 
 /* Balances History (TransactionFlow) */
 .transaction-flow {
-  min-height: 350px;
+  min-height: 1000px;
   height: 100%; /* Updated: Ensure the widget takes the full available height */
   display: flex; /* Updated: Stack h2 and TransactionFlow vertically */
   flex-direction: column; /* Updated */

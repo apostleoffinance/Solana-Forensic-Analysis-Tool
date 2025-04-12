@@ -24,7 +24,6 @@ const TransactionFlow = ({
 
   useEffect(() => {
     if (!containerRef.current || !transactions) {
-
       return;
     }
 
@@ -159,7 +158,6 @@ const TransactionFlow = ({
     if (hackerAddress) {
       const hackerLabel = createTextSprite(hackerAddress, new THREE.Vector3(0, 0, 0), 0xE11D48, 0.6);
       transactionSystem.add(hackerLabel);
-
     }
 
     // Address Nodes (Points)
@@ -247,17 +245,17 @@ const TransactionFlow = ({
     });
 
     // Orbital Rings
-    const createOrbitalRing = (radius, color, opacity) => {
-      const ringGeometry = new THREE.TorusGeometry(radius, 0.05, 16, 100);
-      const ringMaterial = new THREE.MeshBasicMaterial({ color, transparent: true, opacity });
-      const ring = new THREE.Mesh(ringGeometry, ringMaterial);
-      ring.rotation.x = Math.PI / 3;
-      transactionSystem.add(ring);
-      return ring;
-    };
+    // const createOrbitalRing = (radius, color, opacity) => {
+    //   const ringGeometry = new THREE.TorusGeometry(radius, 0.05, 16, 100);
+    //   const ringMaterial = new THREE.MeshBasicMaterial({ color, transparent: true, opacity });
+    //   const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+    //   ring.rotation.x = Math.PI / 3;
+    //   transactionSystem.add(ring);
+    //   return ring;
+    // };
     const orbitalRings = [
-      createOrbitalRing(4.5, 0x84CC16, 0.2),
-      createOrbitalRing(6, 0x84CC16, 0.1),
+      // createOrbitalRing(4.5, 0x84CC16, 0.2),
+      // createOrbitalRing(6, 0x84CC16, 0.1),
     ];
 
     // Lighting
@@ -532,28 +530,28 @@ const TransactionFlow = ({
 
   return (
     <div className={`solana-transaction-flow ${className}`} style={{ width: '100%', height: '100%', position: 'relative' }}>
-      <div className="filters flex space-x-4 mb-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-300 mb-1">Date Filter</label>
+      <div className="filters">
+        <div className="filter-item">
+          <label className="filter-label">Date Filter</label>
           <input
             type="date"
             value={dateFilter}
             onChange={(e) => setDateFilter(e.target.value)}
-            className="p-2 rounded-md bg-gray-800 text-white border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="filter-input"
           />
         </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-300 mb-1">Min Amount</label>
+        <div className="filter-item">
+          <label className="filter-label">Min Amount</label>
           <input
             type="number"
             min="0"
             value={amountFilter}
             onChange={(e) => setAmountFilter(Number(e.target.value))}
-            className="p-2 rounded-md bg-gray-800 text-white border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="filter-input"
           />
         </div>
       </div>
-      <div ref={containerRef} className="transaction-canvas w-full h-full" />
+      <div ref={containerRef} className="transaction-canvas" />
       <style jsx>{`
         .solana-transaction-flow {
           background-color: rgba(26, 32, 44, 0.8);
@@ -571,9 +569,50 @@ const TransactionFlow = ({
           left: 0;
           width: 100%;
           height: 100%;
+          min-height: 750px;
         }
         .filters {
+          display: flex;
+          gap: 1rem; /* Matches the gap used in dashboard-right */
           padding: 10px;
+          margin-bottom: 1rem; /* Matches the mb-4 spacing */
+        }
+        .filter-item {
+          flex: 1;
+        }
+        .filter-label {
+          display: block;
+          font-size: 0.875rem; /* Matches text-sm */
+          font-weight: 500; /* Matches font-medium */
+          color: var(--text-secondary); /* Matches dashboard text-secondary */
+          margin-bottom: 0.25rem; /* Matches mb-1 */
+        }
+        .filter-input {
+          width: 100%;
+          padding: 0.5rem; /* Matches p-2 */
+          border-radius: 6px; /* Matches rounded-md and other dashboard elements */
+          background-color: var(--card-bg); /* Matches dashboard card background */
+          color: var(--text-primary); /* Matches dashboard text-primary */
+          border: 1px solid var(--border); /* Matches dashboard border */
+          font-size: 0.875rem; /* Matches text-sm */
+          transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+        .filter-input:hover {
+          border-color: #4b5563; /* Slightly lighter than --border for hover effect */
+        }
+        .filter-input:focus {
+          outline: none;
+          border-color: var(--accent-blue); /* Matches dashboard accent-blue */
+          box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5); /* Matches focus:ring-2 focus:ring-blue-500 */
+        }
+        /* Style the date picker icon to match the theme */
+        .filter-input[type="date"]::-webkit-calendar-picker-indicator {
+          filter: invert(1); /* Makes the icon white to match text-primary */
+        }
+        .filter-input[type="number"]::-webkit-inner-spin-button,
+        .filter-input[type="number"]::-webkit-outer-spin-button {
+          opacity: 1;
+          filter: invert(1); /* Makes the spin buttons white to match text-primary */
         }
       `}</style>
       <style jsx global>{`

@@ -16,9 +16,9 @@ export default function Home() {
       {/* Main Content Grid */}
       <div className="dashboard-grid">
         {/* Left Column */}
-        <div className="dashboard-left" >
+        {/* <div className="dashboard-left" >
           LEFT COLUMN FOR SOMETHING?
-        </div>
+        </div> */}
 
         {/* Right Column */}
         <div className="dashboard-right">
