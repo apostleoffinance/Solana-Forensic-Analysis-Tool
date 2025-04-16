@@ -51,3 +51,7 @@ def create_app():
         # Not sure what we should return?  jsonified tx_graph?
         return jsonify({'tx_graph':jsonify(tx_graph)})
         
+if __name__ == "__main__":
+    print('Starting Flask app...')
+    app = create_app()
+    app.run(debug=True, use_reloader=False, port=5025) #use a different port?
