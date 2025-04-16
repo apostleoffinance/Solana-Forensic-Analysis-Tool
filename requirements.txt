@@ -19,3 +19,4 @@ urllib3
 ipykernel # for notebooks
 dotenv
 flask
+alpaca-py
