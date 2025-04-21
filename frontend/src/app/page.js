@@ -1,10 +1,13 @@
 // app/page.js
 'use client';
 import { getMockTransactions } from '../api/transactionFlow';
+import { getMockWallets } from '../api/walletAnalysis';
 import TransactionFlow from '../components/TransactionFlow';
+import WalletAnalysis from '../components/WalletAnalysis';
 
 export default function Home() {
-  const mockTransactions = getMockTransactions();
+  const mockTransactionFlowData = getMockTransactions();
+  const mockWalletAnalysisData = getMockWallets();
 
   return (
     <div className="dashboard">
@@ -22,10 +25,6 @@ export default function Home() {
 
         {/* Right Column */}
         <div className="dashboard-right">
-          <div className="widget transaction-flow">
-            <h2>Transaction Flow</h2>
-            <TransactionFlow transactions={mockTransactions} />
-          </div>
 
           {/* Placeholder for Entity Labels */}
           <div className="widget entity-labels">
@@ -37,12 +36,6 @@ export default function Home() {
           <div className="widget transaction-clusters">
             <h2>Transaction Clusters</h2>
             <div className="placeholder">Transaction Clusters Placeholder</div>
-          </div>
-
-          {/* Placeholder for Wallet Analysis */}
-          <div className="transfers-section">
-            <h2>Wallet Analysis</h2>
-            <div className="placeholder">Wallet Analysis Placeholder</div>
           </div>
 
         </div>
