@@ -2,6 +2,7 @@ from flask import Flask, render_template, request, jsonify
 from src.clustering import create_tx_graph
 from src.data_fetching import get_balance_data
 from src.data_processing import get_comprehensive_tx_history, construct_tx_dataset 
+from src.entity_labeling import add_entity_labels
 import os
 from dotenv import load_dotenv
 
@@ -17,7 +18,7 @@ def create_app():
 
     @app.route('/')
     def home():
-        return render_template('index.html')
+        return print('running app')
     
     @app.route('/analyze_address', methods=['POST'])
     def analyze_address():
@@ -46,10 +47,28 @@ def create_app():
         
         tx_level_data = construct_tx_dataset(parsed_transaction_history,address,balance_df)
 
-        tx_graph = create_tx_graph(tx_level_data)
+        print(f'tx_level_data after construct dataset: {tx_level_data}')
+
+        breakpoint()
+
+        tx_level_data_complete = add_entity_labels(tx_level_data, address)
+
+        print(f'tx_level_data_complete after entity labeling: {tx_level_data_complete}')
+
+        breakpoint()
+
+        tx_graph = create_tx_graph(tx_level_data_complete)
+
+        print(F'tx_graph: {tx_graph}')
+
+        breakpoint()
+
+        #Where do we add wallet analysis?
 
         # Not sure what we should return?  jsonified tx_graph?
-        return jsonify({'tx_graph':jsonify(tx_graph)})
+        return jsonify({'tx_graph':tx_graph})
+    
+    return app
         
 if __name__ == "__main__":
     print('Starting Flask app...')

@@ -1,0 +1,92 @@
+import requests
+from dotenv import load_dotenv
+import os
+import pandas as pd
+import time
+import json
+
+from src.data_fetching import get_vybe_identified_accounts, get_vybe_identified_programs
+
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # This resolves to project 
+METASLEUTH_PATH = os.path.join(ROOT_DIR, 'data', 'raw', 'metasleuth_labels.json')
+RAW_DATA_PATH = os.path.join(ROOT_DIR, 'data', 'raw')
+
+def load_flipside_labels():
+    flipside_files = ['solana_cex_labels','solana_chadmin','solana_dapp_labels','solana_defi_labels']
+    flipside_labels_df = pd.DataFrame()
+    for file in flipside_files:
+        dir = f'{file}.csv'
+        path = os.path.join(RAW_DATA_PATH, dir)
+        df = pd.read_csv(path, on_bad_lines='skip').dropna()
+        flipside_labels_df = pd.concat([flipside_labels_df,df])
+        flipside_labels_dict = dict(zip(flipside_labels_df['ADDRESS'], flipside_labels_df['ADDRESS_NAME']))
+
+    return flipside_labels_dict
+
+def load_vybe_labels():
+    vybe_programs_map = get_vybe_identified_programs()
+    vybe_addresses_map = get_vybe_identified_accounts()
+
+    return vybe_programs_map, vybe_addresses_map
+
+def get_solana_chainid(data):
+    # Helper function for Metasleuth API
+    for d in data['data']:
+        chain_id = d.get('chain_id')
+        chain_name = d.get('chain_name')
+
+        if chain_name.lower() == 'solana':
+            return {chain_id:chain_name}
+        
+def load_metasleuth_labels():
+    with open(METASLEUTH_PATH) as f:
+        solana_labels = json.load(f)
+    
+    entities_dict = {}
+
+    for l in solana_labels:
+        entity = l['main_entity']
+        address = l['address']
+
+        entities_dict[address] = entity
+
+    return entities_dict
+
+def add_entity_labels(df_og, address):
+
+    df = df_og.copy()
+
+    flipside_labels_dict = load_flipside_labels()
+    vybe_programs_map, vybe_addresses_map = load_vybe_labels()
+    entities_dict = load_metasleuth_labels()
+
+    # Normalize mapping keys
+    vybe_programs_map = {k.lower(): v for k, v in vybe_programs_map.items()}
+    vybe_addresses_map = {k.lower(): v for k, v in vybe_addresses_map.items()}
+    entities_dict = {k.lower(): v for k, v in entities_dict.items()} # metasleuth
+    flipside_labels_dict = {k.lower(): v for k, v in flipside_labels_dict.items()} # flipside
+    combined_address_label_map = {
+        **vybe_addresses_map,
+        **entities_dict,
+        **flipside_labels_dict
+    }
+
+    # Apply human-readable labels to tx-level DataFrame
+    df['sender_name'] = df['sender'].astype(str).str.lower().map(
+        lambda addr: combined_address_label_map.get(addr, 'Unknown Address'))
+
+    df['receiver_name'] = df['receiver'].astype(str).str.lower().map(
+        lambda addr: combined_address_label_map.get(addr, 'Unknown Address'))
+
+    df['counterparty_name'] = df['counterparty'].astype(str).str.lower().map(
+        lambda addr: combined_address_label_map.get(addr, 'Unknown Address'))
+
+    df['program_name'] = df['program_id'].astype(str).str.lower().map(
+        lambda pid: vybe_programs_map.get(pid, 'Unknown Program'))
+    
+    df['wallet_entity_label'] = combined_address_label_map.get(address.lower(), 'Unknown Entity')
+
+    return df
+
+
+

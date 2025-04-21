@@ -1,9 +1,12 @@
 import pandas as pd
 import numpy as np
 import json
-from src.data_fetching import get_all_signatures, v0_transactions_all
+from src.data_fetching import get_all_signatures, v0_transactions_all, get_price_data
+from src.metadata import LAMPORT_SCALE, WRAPPED_SOL, NATIVE_SOL
+import os
 
-LAMPORT_SCALE = 1e9
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # This resolves to project root
+TEST_TX_PATH = os.path.join(ROOT_DIR, 'data', 'raw', 'test_tx_history.json')
 
 def clean_tx_data(df: pd.DataFrame) -> pd.DataFrame:
     # Drop duplicates
@@ -125,7 +128,7 @@ def build_tx_graph(df: pd.DataFrame):
 def get_comprehensive_tx_history(wallet, api_key, use_cache=True):
 
     if use_cache:
-        with open('../data/raw/test_tx_history.json') as f:
+        with open(TEST_TX_PATH) as f:
             parsed_transaction_history = json.load(f)
 
         return parsed_transaction_history
@@ -146,7 +149,7 @@ def get_comprehensive_tx_history(wallet, api_key, use_cache=True):
 
         parsed_transaction_history = v0_transactions_all(signatures_array, api_key)
 
-        with open('../data/raw/test_tx_history.json', 'w') as f:
+        with open(TEST_TX_PATH, 'w') as f:
             json.dump(parsed_transaction_history, f)
 
         return parsed_transaction_history
@@ -165,73 +168,102 @@ def get_instruction_data(tx, wallet):
     return instructions_data
 
 def summarize_transaction(tx, wallet):
-    native_amount = 0
-    token_address = None
-    token_amount = 0
-    counterparties = set()
-    sender = None
-    receiver = None
-    direction = None
-
-    # Native transfers (track total SOL involved)
-    for t in tx.get("nativeTransfers", []):
-        amount = t.get("amount", 0) / LAMPORT_SCALE
-        from_user = t.get("fromUserAccount")
-        to_user = t.get("toUserAccount")
-
-        if from_user == wallet:
-            native_amount -= amount
-            counterparties.add(to_user)
-            sender = wallet
-            receiver = to_user
-            direction = "sent"
-        elif to_user == wallet:
-            native_amount += amount
-            counterparties.add(from_user)
-            sender = from_user
-            receiver = wallet
-            direction = "received"
-
-    # Token transfers (assume one token per tx or summarize total of one type)
-    for t in tx.get("tokenTransfers", []):
-        try:
-            amount = float(t.get("tokenAmount", 0))
-        except (ValueError, TypeError):
-            amount = 0
-
-        mint = t.get("mint", "UNKNOWN")
-        from_user = t.get("fromUserAccount")
-        to_user = t.get("toUserAccount")
-
-        if from_user == wallet:
-            token_address = mint
-            token_amount -= amount
-            counterparties.add(to_user)
-            sender = wallet
-            receiver = to_user
-            direction = "sent"
-        elif to_user == wallet:
-            token_address = mint
-            token_amount += amount
-            counterparties.add(from_user)
-            sender = from_user
-            receiver = wallet
-            direction = "received"
-
-    return {
+    base = {
         "timestamp": tx.get("timestamp"),
         "signature": tx.get("signature"),
         "type": tx.get("type", "UNKNOWN"),
         "source": tx.get("source", "UNKNOWN"),
         "tx_status": int(tx.get("transactionError") is None),
-        "direction": direction,
-        "sender": sender,
-        "receiver": receiver,
-        "counterparty": list(counterparties)[0] if len(counterparties) == 1 else None,
-        "Native SOL Amount": abs(native_amount) if native_amount else None,
-        "token_address": token_address,
-        "token_amount": abs(token_amount) if token_address else None
+        "block_number": tx.get("slot"),
     }
+
+    # Track counterparties
+    rows = []
+    counterparties = set()
+
+    # Native transfers
+    seen_native = set()
+    for t in tx.get("nativeTransfers", []):
+        amount = t.get("amount", 0) / LAMPORT_SCALE
+        from_user = t.get("fromUserAccount")
+        to_user = t.get("toUserAccount")
+        
+        transfer_id = (from_user, to_user, amount)
+        if transfer_id in seen_native:
+            continue
+        seen_native.add(transfer_id)
+
+        if wallet in [from_user, to_user]:
+            row = base.copy()
+            row.update({
+                "token_address": NATIVE_SOL,
+                # "symbol": "SOL",
+                "token_amount": amount,
+                "direction": "sent" if from_user == wallet else "received",
+                "sender": from_user,
+                "receiver": to_user,
+                "counterparty": to_user if from_user == wallet else from_user,
+            })
+            rows.append(row)
+
+
+    # Token transfers
+    for t in tx.get("tokenTransfers", []):
+        try:
+            amount = float(t.get("tokenAmount", 0))
+        except (ValueError, TypeError):
+            amount = 0.0
+
+        mint = t.get("mint", "UNKNOWN")
+        from_user = t.get("fromUserAccount")
+        to_user = t.get("toUserAccount")
+
+        row = base.copy()
+        row.update({
+            "token_address": mint,
+            "token_amount": amount,
+            "direction": "sent" if from_user == wallet else "received",
+            "sender": from_user,
+            "receiver": to_user,
+            "counterparty": to_user if from_user == wallet else from_user,
+        })
+        if wallet in [from_user, to_user]:
+            counterparties.add(row["counterparty"])
+            rows.append(row)
+    if not rows:
+        for acc in tx.get("accountData", []):
+            acct = acc.get("account")
+            native_change = acc.get("nativeBalanceChange", 0) / LAMPORT_SCALE
+            if acct == wallet:
+                row = base.copy()
+                row.update({
+                    "token_address": NATIVE_SOL,
+                    "token_amount": abs(native_change),
+                    "direction": "received" if native_change > 0 else "sent",
+                    "sender": None,
+                    "receiver": wallet,
+                    "counterparty": None,
+                })
+                rows.append(row)
+
+    for event in tx.get("events", {}).get("compressed", []):
+        if event.get("type") == "COMPRESSED_NFT_MINT":
+            if event.get("newLeafOwner") == wallet:
+                row = base.copy()
+                row.update({
+                    "token_address": "COMPRESSED_NFT",
+                    "token_amount": 1,
+                    "direction": "received",
+                    "sender": event.get("treeDelegate"),
+                    "receiver": wallet,
+                    "counterparty": event.get("treeDelegate"),
+                    "symbol": event.get("metadata", {}).get("name", "NFT"),
+                })
+                rows.append(row)
+
+    return rows
+
+#Helper function to create row from helius and flipside data
 
 def create_row(tx, wallet, balance_df):
     """
@@ -240,19 +272,23 @@ def create_row(tx, wallet, balance_df):
     tx_summary = summarize_transaction(tx, wallet)
     instructions_data = get_instruction_data(tx, wallet)
 
-    token_tx_df = pd.DataFrame([tx_summary])
+    token_tx_df = pd.DataFrame(tx_summary)
+
     tx_status = "failed" if tx.get("transactionError") else "success"
 
     token_tx_df['block_number'] = tx.get('slot')
     token_tx_df['tx_fee'] = tx.get('fee') / LAMPORT_SCALE
     token_tx_df['program_id'] = instructions_data.get('programId')
     token_tx_df['tx_status'] = tx_status #if no tx error, can assume it succeeded so we use binary 1 and 0 instead of just leaving nan
-    token_tx_df['signature'] = token_tx_df['signature'].str.lower()
 
-    filtered_balance_timeseries = balance_df[['PRE_BALANCE','BALANCE','SYMBOL','NAME','MINT','TX_ID']]
+    filtered_balance_timeseries = balance_df[['PRE_BALANCE','BALANCE','SYMBOL','NAME','MINT','TX_ID']].rename(columns={'MINT':'token_address'})
     filtered_balance_timeseries = filtered_balance_timeseries.rename(columns={'TX_ID':'signature'})
 
-    combined_df = pd.merge(token_tx_df,filtered_balance_timeseries,on='signature', how='left')
+    if not token_tx_df.empty:
+        combined_df = pd.merge(token_tx_df, filtered_balance_timeseries, on=['signature','token_address'], how='left')
+    else:
+        combined_df = pd.DataFrame()
+        
     return combined_df 
 
 def construct_tx_dataset(parsed_transaction_history,address,balance_df):
@@ -260,16 +296,29 @@ def construct_tx_dataset(parsed_transaction_history,address,balance_df):
 
     for i in parsed_transaction_history:
         row = create_row(i, address, balance_df)
-        tx_level_data = pd.concat([tx_level_data, row]).drop_duplicates(subset='signature')
+        tx_level_data = pd.concat([tx_level_data, row])
 
     tx_level_data['timestamp'] = pd.to_datetime(tx_level_data['timestamp'], unit='s')
     tx_level_data.rename(columns={'BALANCE':'POST_BALANCE','NAME':'TOKEN_NAME'},inplace=True)
 
+    prices_data = get_price_data()# Ideally we add date param which is min dt in tx_level_data
+
+    tx_level_data = add_price_data(tx_level_data, prices_data)
+
+    return tx_level_data
+
+def add_price_data(tx_level_data, prices_data):
+    tx_level_data['day'] = pd.to_datetime(tx_level_data['timestamp'].dt.strftime('%Y-%m-%d'))
+    prices_data = prices_data.rename(columns={'dt': 'day'})
+    prices_data['day'] = pd.to_datetime(prices_data['day'])
+    tx_level_data = tx_level_data.merge(prices_data[['day', 'token_address', 'price']], on=['day', 'token_address'], how='left')
+    tx_level_data['token_amount_usd'] = tx_level_data['token_amount'].fillna(0) * tx_level_data['price']
+
     #Confirming datatypes 
-    float_cols = ['Native SOL Amount','token_amount', 'tx_fee','PRE_BALANCE', 'POST_BALANCE']
+    float_cols = ['token_amount_usd','token_amount', 'tx_fee','PRE_BALANCE', 'POST_BALANCE']
     int_cols = ['block_number']
     str_cols = ['signature',
-        'sender', 'receiver', 'counterparty','SYMBOL', 'TOKEN_NAME', 'MINT']
+        'sender', 'receiver', 'counterparty','SYMBOL', 'TOKEN_NAME', 'token_address']
     category_cols = ['type','source','tx_status','direction']
 
     tx_level_data[float_cols] = tx_level_data[float_cols].astype(float)
@@ -278,3 +327,7 @@ def construct_tx_dataset(parsed_transaction_history,address,balance_df):
     tx_level_data[category_cols] = tx_level_data[category_cols].astype("category")
 
     return tx_level_data
+
+
+
+

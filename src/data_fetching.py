@@ -2,6 +2,17 @@ import pandas as pd
 import json
 import requests
 import time
+import os
+from src.metadata import LAMPORT_SCALE, WRAPPED_SOL, NATIVE_SOL
+
+from dotenv import load_dotenv
+load_dotenv()
+
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # This resolves to project root
+TEST_BAL_PATH = os.path.join(ROOT_DIR, 'data', 'raw', 'solana_balance_history_test.csv')
+TEST_PRICES_PATH = os.path.join(ROOT_DIR, 'data', 'raw', 'test_address_prices.csv')
+
+VYBE_API_KEY = os.getenv('VYBE_API_KEY')
 
 def get_all_signatures(account_address, helius_api_key, max_pages=20, limit=100):
     url = f"https://mainnet.helius-rpc.com/?api-key={helius_api_key}"
@@ -76,7 +87,7 @@ def get_balance_data(account_address=None):
     """
     For testing we are using CSV and test address
     """
-    balance_df = pd.read_csv('../data/raw/solana_balance_history_test.csv').dropna(how='all')
+    balance_df = pd.read_csv(TEST_BAL_PATH).dropna(how='all')
 
     # Strip BOMs or invisible characters from column names
     balance_df.columns = balance_df.columns.str.replace('\ufeff', '', regex=False).str.strip()
@@ -92,6 +103,91 @@ def get_balance_data(account_address=None):
     balance_df.loc[sol_mask, 'SYMBOL'] = 'SOL'
     balance_df.loc[sol_mask, 'NAME'] = 'Solana'
 
-    balance_df['TX_ID'] = balance_df['TX_ID'].str.lower()
-
     return balance_df
+
+def get_price_data():
+    # For now we pull from CSV
+    prices_data = pd.read_csv(TEST_PRICES_PATH).dropna()
+    prices_data['DT'] = pd.to_datetime(pd.to_datetime(prices_data['DT']).dt.strftime('%Y-%m-%d'))
+    prices_data.columns = prices_data.columns.str.lower()
+
+    # Duplicate wrapped SOL rows with native SOL address
+    wrapped_sol_prices = prices_data[prices_data['token_address'] == WRAPPED_SOL].copy()
+    wrapped_sol_prices['token_address'] = NATIVE_SOL
+
+    # Append to original price data
+    prices_data = pd.concat([prices_data, wrapped_sol_prices], ignore_index=True)
+
+    return prices_data
+
+def get_vybe_identified_accounts(use_cache=True):
+
+    url = "https://api.vybenetwork.xyz/account/known-accounts"
+
+    headers = {"accept": "application/json","X-API-KEY":VYBE_API_KEY}
+
+    response = requests.get(url, headers=headers)
+
+    data = response.json()
+
+    identified_addresses = {}
+    for account in data['accounts']:
+        address = account.get('ownerAddress')
+        address = address.lower()
+        name = account.get('name')
+        identified_addresses[address] = name
+
+    return identified_addresses
+
+def get_vybe_identified_programs(use_cache=True):
+
+    url = "https://api.vybenetwork.xyz/program/known-program-accounts"
+
+    headers = {"accept": "application/json","X-API-KEY":VYBE_API_KEY}
+
+    response = requests.get(url, headers=headers)
+
+    data = response.json()
+
+    identified_programs = {}
+
+    for account in data['programs']:
+        program_id = account.get('programId')
+        program_id = program_id.lower()
+        name = account.get('name')
+        identified_programs[program_id] = name
+
+    return identified_programs
+
+def chunked(iterable, size):
+    """Yield successive `size`-sized chunks from iterable."""
+    for i in range(0, len(iterable), size):
+        yield iterable[i:i + size]
+
+def fetch_address_labels(unique_addresses, chain_id, api_key, delay=0.2):
+    url = "https://aml.blocksec.com/address-label/api/v3/batch-labels"
+    headers = {
+        "API-KEY": api_key,
+        "Content-Type": "application/json"
+    }
+    results = []
+
+    for chunk in chunked(unique_addresses, 100):
+        response = requests.post(
+            url,
+            headers=headers,
+            json={
+                "chain_id": chain_id,
+                "addresses": chunk
+            }
+        )
+        data = response.json()
+        print(f'data: {data}')
+        if data.get("code") == 200000:
+            results.extend(data.get("data", []))
+        else:
+            print(f"[Error] Batch failed: {data}")
+        time.sleep(delay)  # optional delay to avoid rate limits
+
+    return results
+    
