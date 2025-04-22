@@ -3,7 +3,6 @@ import { useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import cytoscape from 'cytoscape';
 import popper from 'cytoscape-popper';
-import Link from 'next/link';
 
 // Register popper extension with Cytoscape
 cytoscape.use(popper);
