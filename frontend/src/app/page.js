@@ -27,10 +27,10 @@ export default function Home() {
         <div className="dashboard-right">
 
           {/* Placeholder for Entity Labels */}
-          <div className="widget entity-labels">
+          {/* <div className="widget entity-labels">
             <h2>Entity Labels</h2>
             <div className="placeholder">Entity Labels Placeholder</div>
-          </div>
+          </div> */}
 
           {/* Placeholder for Transaction Clusters */}
           <div className="widget transaction-clusters">
