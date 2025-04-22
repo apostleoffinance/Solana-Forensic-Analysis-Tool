@@ -11,9 +11,13 @@
   "dependencies": {
     "@popperjs/core": "^2.11.8",
     "@three-ts/orbit-controls": "^1.4.7",
+    "@tsparticles/engine": "^3.8.1",
+    "@tsparticles/react": "^3.0.0",
+    "@tsparticles/slim": "^3.8.1",
     "cytoscape": "^3.31.2",
     "cytoscape-popper": "^4.0.1",
     "d3-force-3d": "^3.0.6",
+    "framer-motion": "^12.7.4",
     "gsap": "^3.12.7",
     "next": "15.2.4",
     "react": "^19.0.0",
