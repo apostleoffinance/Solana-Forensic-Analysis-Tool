@@ -1,0 +1,2 @@
+*.env
+/solana_analysis_tool_env
