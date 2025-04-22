@@ -37,7 +37,7 @@ const TransactionFlow = ({
     if (containerWidth === 0 || containerHeight === 0) {
       console.warn('Container has zero dimensions, using fallback size');
       containerWidth = 600;
-      containerHeight = 300;
+      containerHeight = 500;
     }
 
     const scene = new THREE.Scene();
@@ -50,6 +50,7 @@ const TransactionFlow = ({
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     rendererRef.current = renderer;
     renderer.setSize(containerWidth, containerHeight);
+    renderer.domElement.style.height = '1000px';
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     container.appendChild(renderer.domElement);
 
@@ -568,7 +569,6 @@ const TransactionFlow = ({
           top: 0;
           left: 0;
           width: 100%;
-          height: 100%;
           min-height: 750px;
         }
         .filters {
@@ -633,7 +633,7 @@ const TransactionFlow = ({
           position: absolute;
           top: 20px;
           right: 20px;
-          width: 300px;
+          width: 750px;
           background-color: rgba(26, 32, 44, 0.95);
           color: white;
           border-radius: 8px;

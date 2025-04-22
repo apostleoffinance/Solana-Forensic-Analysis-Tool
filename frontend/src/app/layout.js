@@ -27,7 +27,7 @@ export default function RootLayout({ children }) {
             <Link href="/">Solana Forensic</Link>
           </div>
           <nav className="header-nav">
-            <Link href="/transation-flow">Transaction Flow</Link>
+            <Link href="/transaction-flow">Transaction Flow</Link>
             <Link href="/transaction-clusters">Transaction Clusters</Link>
             <Link href="/entity-labels">Entity Labels</Link>
             <Link href="/wallet-analysis">Wallet Analysis</Link>
