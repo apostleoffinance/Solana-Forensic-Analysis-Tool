@@ -1,9 +1,11 @@
 from flask import Flask, render_template, request, jsonify
 from src.clustering import create_tx_graph
 from src.data_fetching import get_balance_data
-from src.data_processing import get_comprehensive_tx_history, construct_tx_dataset 
+from src.data_processing import get_comprehensive_tx_history, construct_tx_dataset, get_summary_stats, jsonify_safe 
 from src.entity_labeling import add_entity_labels
+from src.wallet_analysis import WalletAnalysis
 import os
+import pandas as pd
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -49,24 +51,55 @@ def create_app():
 
         print(f'tx_level_data after construct dataset: {tx_level_data}')
 
-        breakpoint()
-
         tx_level_data_complete = add_entity_labels(tx_level_data, address)
 
         print(f'tx_level_data_complete after entity labeling: {tx_level_data_complete}')
-
-        breakpoint()
 
         tx_graph = create_tx_graph(tx_level_data_complete)
 
         print(F'tx_graph: {tx_graph}')
 
-        breakpoint()
+        wallet_analysis_df = get_summary_stats(tx_level_data_complete, address)
+
+        print(f'wallet_analysis_df: {wallet_analysis_df}')
+
+        wallet_analysis_obj = WalletAnalysis(wallet_analysis_df)
+
+        funding_sources = wallet_analysis_obj.track_funding_sources_and_flow(address).astype(object).where(pd.notnull).to_dict(orient='records')
+
+        print("Funding Sources and Asset Flow:") 
+        print(funding_sources)
+
+        transaction_history = wallet_analysis_obj.transaction_history(address)
+        print("\nTransaction History:")
+        print(transaction_history)
+
+        activity_patterns = wallet_analysis_obj.key_activity_patterns_and_risk_factors(address)
+        print("\nActivity Patterns and Risk Factors:")
+        print(activity_patterns)
 
         #Where do we add wallet analysis?
 
-        # Not sure what we should return?  jsonified tx_graph?
-        return jsonify({'tx_graph':tx_graph})
+        print('funding_sources', type(funding_sources))
+        print('transaction_history', type(transaction_history))
+        print('activity_patterns', type(activity_patterns))
+
+        complete_wallet_analysis = {
+            'funding_sources':funding_sources,
+            'transaction_history': transaction_history,
+            'activity_patterns':activity_patterns
+        }
+
+        results = {
+            'wallet_analysis': complete_wallet_analysis,
+            'tx_graph': tx_graph
+        }
+
+        print('complete_wallet_analysis', type(complete_wallet_analysis))
+        print('tx_graph', type(tx_graph))
+        print('results', type(results))
+
+        return jsonify(jsonify_safe(results))
     
     return app
         

@@ -8,122 +8,87 @@ import os
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # This resolves to project root
 TEST_TX_PATH = os.path.join(ROOT_DIR, 'data', 'raw', 'test_tx_history.json')
 
-def clean_tx_data(df: pd.DataFrame) -> pd.DataFrame:
-    # Drop duplicates
-    df = df.drop_duplicates(subset=['signature'])
+def clean_tx_data(df):
+    df = df.copy()  # Avoid SettingWithCopyWarning
 
-    # Fill missing wallet names and labels with 'Unknown'
-    # Fill name fields with wallet addresses if 'Unknown Address'
-    df['sender_name'] = np.where(
-        df['sender_name'] == 'Unknown Address',
-        df['sender'].str.slice(0, 6),
-        df['sender_name']
-    )
-    df['receiver_name'] = np.where(
-        df['receiver_name'] == 'Unknown Address',
-        df['receiver'].str.slice(0, 6),
-        df['receiver_name']
-    )
-    df['counterparty_name'] = np.where(
-        df['counterparty_name'] == 'Unknown Address',
-        df['counterparty'].str.slice(0, 6),
-        df['counterparty_name']
-    )
-    
-    # Fill missing wallet_entity_label with 'Unknown'
-    df['wallet_entity_label'] = df['wallet_entity_label'].fillna('Unknown Address')
-    
-    # Convert timestamp to datetime object
-    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    # Fill missing columns
+    default_columns = [
+        'sender_name', 'receiver_name', 'counterparty_name', 
+        'wallet_entity_label', 'program_name'
+    ]
+    for col in default_columns:
+        if col not in df.columns:
+            df[col] = 'Unknown Address' if col != 'program_name' else 'Unknown Program'
 
-    # 4. Filter for successful SOL transfers
-    df = df[
-        (df['tx_status'] == 'success') ]
-    
-    # 5. Remove duplicates based on signature
-    df = df.drop_duplicates(subset=['signature'])
-    
-    # 6. Reset index
-    df = df.reset_index(drop=True)
+    # Only apply fallback logic if 'wallet' column exists
+    if 'wallet' in df.columns:
+        df.loc[:, 'sender_name'] = np.where(
+            df['sender'].isin(df['wallet'].values),
+            df['wallet_entity_label'],
+            df['sender_name']
+        )
 
+        df.loc[:, 'receiver_name'] = np.where(
+            df['receiver'].isin(df['wallet'].values),
+            df['wallet_entity_label'],
+            df['receiver_name']
+        )
 
-    # Ensure numerical columns are clean
-    numeric_cols = ['Native SOL Amount', 'token_amount', 'tx_fee', 'PRE_BALANCE', 'POST_BALANCE']
-    for col in numeric_cols:
-        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+        df.loc[:, 'counterparty_name'] = np.where(
+            df['counterparty'].isin(df['wallet'].values),
+            df['wallet_entity_label'],
+            df['counterparty_name']
+        )
+
+    # Convert timestamp to datetime
+    if 'timestamp' in df.columns:
+        df.loc[:, 'timestamp'] = pd.to_datetime(df['timestamp'])
 
     return df
 
-def build_tx_graph(df: pd.DataFrame):
+def build_tx_graph(df):
     nodes = {}
     edges = []
 
     for _, row in df.iterrows():
         sender = row['sender']
         receiver = row['receiver']
-        pre_balance = row['PRE_BALANCE'] or 0
-        post_balance = row['POST_BALANCE'] or 0
-        net_change = post_balance - pre_balance
-        native_amount = row['Native SOL Amount'] or 0
+        sender_label = row['sender_name']
+        receiver_label = row['receiver_name']
+        amount_usd = row.get('amount_usd', 0)  # Ensure amount_usd has a fallback value
 
-        # Add sender node
+        # Initialize sender node if not already present
         if sender not in nodes:
             nodes[sender] = {
                 "id": sender,
-                "label": row['sender_name'],
-                "entity": row['wallet_entity_label'],
-                "type": "sender",
-                "pre_balance": pre_balance,
-                "post_balance": post_balance,
-                "net_balance_change": net_change,
-                "native_sol_amount": native_amount
+                "label": sender_label,
+                "amount_usd_sent": 0,
+                "amount_usd_received": 0
             }
-        else:
-            # Accumulate net change and balances if already added
-            nodes[sender]["pre_balance"] = min(nodes[sender]["pre_balance"], pre_balance)
-            nodes[sender]["post_balance"] = max(nodes[sender]["post_balance"], post_balance)
-            nodes[sender]["net_balance_change"] += net_change
-            nodes[sender]["native_sol_amount"] += native_amount
-            
-        # Add receiver node
+
+        # Initialize receiver node if not already present
         if receiver not in nodes:
             nodes[receiver] = {
                 "id": receiver,
-                "label": row['receiver_name'],
-                "entity": row['wallet_entity_label'],
-                "type": "receiver",
-                "pre_balance": pre_balance,
-                "post_balance": post_balance,
-                "net_balance_change": net_change,
-                "native_sol_amount": native_amount
+                "label": receiver_label,
+                "amount_usd_sent": 0,
+                "amount_usd_received": 0
             }
-        else:
-            # Accumulate if already added
-            nodes[receiver]["pre_balance"] = min(nodes[receiver]["pre_balance"], pre_balance)
-            nodes[receiver]["post_balance"] = max(nodes[receiver]["post_balance"], post_balance)
-            nodes[receiver]["net_balance_change"] += net_change
-            nodes[receiver]["native_sol_amount"] += native_amount
 
+        # Add amount to the sender's "sent" total, ensuring no NoneType errors
+        nodes[sender]["amount_usd_sent"] += amount_usd if amount_usd is not None else 0
 
+        # Add amount to the receiver's "received" total, ensuring no NoneType errors
+        nodes[receiver]["amount_usd_received"] += amount_usd if amount_usd is not None else 0
 
-        # Create edge
-        edge = {
-            "source": sender,
-            "target": receiver,
-            "amount": native_amount or row['token_amount'],
-            "symbol": row['SYMBOL'],
-            "token": row['TOKEN_NAME'],
-            "timestamp": row['timestamp'].isoformat(),
-            "tx_type": row['type'],
-            "program": row['program_name'],
-            "signature": row['signature']
-        }
-        edges.append(edge)
+        # Add edge between sender and receiver
+        edges.append({
+            "from": sender,
+            "to": receiver,
+            "value": amount_usd if amount_usd is not None else 0
+        })
 
-    return {
-        "nodes": list(nodes.values()),
-        "edges": edges
-    }
+    return {"nodes": nodes, "edges": edges}
 
 def get_comprehensive_tx_history(wallet, api_key, use_cache=True):
 
@@ -328,6 +293,69 @@ def add_price_data(tx_level_data, prices_data):
 
     return tx_level_data
 
+def get_summary_stats(df, address):
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    received_tx = df[df['receiver']==address]
+    sent_tx = df[df['sender']==address]
+
+    total_tx = df['signature'].nunique()
+    sol_sent_vol = sent_tx[sent_tx['token_address']==NATIVE_SOL]['token_amount'].sum()
+    sol_received_vol = received_tx[received_tx['token_address']==NATIVE_SOL]['token_amount'].sum()
+
+    token_received_df = received_tx[received_tx['token_address']!=NATIVE_SOL]
+    tokens_recieved_dict = token_received_df.groupby('SYMBOL')[['token_amount']].sum().to_dict()
+
+    token_sent_df = sent_tx[sent_tx['token_address']!=NATIVE_SOL]
+    tokens_sent_dict = token_sent_df.groupby('SYMBOL')[['token_amount']].sum().to_dict()
+
+    first_tx = df['timestamp'].min()
+    last_tx = df['timestamp'].max()
+
+    df = df.sort_values('timestamp')
+    
+    avg_tx_interval = df['timestamp'].diff().mean()
+
+    avg_seconds = avg_tx_interval.total_seconds()
+    avg_minutes = avg_seconds / 60
+    avg_hours = avg_seconds / 3600
+
+    unique_receivers = len(df['receiver'].unique())
+    unique_senders = len(df['sender'].unique())
+
+    wallet_analysis_dict = {
+        'wallet_address':address,
+        'entity_label': df['wallet_entity_label'].iloc[0],
+        'num_transactions': total_tx,
+        'total_sol_volume_sent': sol_sent_vol,
+        'total_sol_volume_received': sol_received_vol,
+        'total_token_volume_sent':tokens_sent_dict,
+        'total_token_volume_recieved':tokens_recieved_dict,
+        'first_tx_time':first_tx,
+        'last_tx_time':last_tx,
+        'avg_tx_interval (seconds)':avg_seconds,
+        'num_unique_senders':unique_senders,
+        'num_unique_receivers':unique_receivers
+    }
+
+    wallet_analysis_df = pd.DataFrame([wallet_analysis_dict])
+
+    return wallet_analysis_df
+
+def jsonify_safe(obj):
+    if isinstance(obj, dict):
+        return {k: jsonify_safe(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [jsonify_safe(i) for i in obj]
+    elif isinstance(obj, (np.integer, np.int64)):
+        return int(obj)
+    elif isinstance(obj, (np.floating, np.float64)):
+        return float(obj)
+    elif isinstance(obj, (np.ndarray,)):
+        return obj.tolist()
+    elif isinstance(obj, pd.Timestamp):
+        return obj.isoformat()
+    else:
+        return obj
 
 
 
