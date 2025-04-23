@@ -1,4 +1,7 @@
 /** @type {import('next').NextConfig} */
+
+const isProd = process.env.NODE_ENV === 'production';
+
 const nextConfig = {
     output: 'export', // Enables static export
     basePath: isProd ? '/Solana-Forensic-Analysis-Tool' : '', // Replace <repo-name> with your GitHub repository name

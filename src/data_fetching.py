@@ -11,6 +11,7 @@ load_dotenv()
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # This resolves to project root
 TEST_BAL_PATH = os.path.join(ROOT_DIR, 'data', 'raw', 'solana_balance_history_test.csv')
 TEST_PRICES_PATH = os.path.join(ROOT_DIR, 'data', 'raw', 'test_address_prices.csv')
+CACHE_DIR = os.path.join(ROOT_DIR, "data", "raw")
 
 VYBE_API_KEY = os.getenv('VYBE_API_KEY')
 
@@ -121,41 +122,50 @@ def get_price_data():
     return prices_data
 
 def get_vybe_identified_accounts(use_cache=True):
+    cache_file = os.path.join(CACHE_DIR, "vybe_identified_accounts.json")
+
+    if use_cache and os.path.exists(cache_file):
+        with open(cache_file, 'r') as f:
+            return json.load(f)
 
     url = "https://api.vybenetwork.xyz/account/known-accounts"
-
-    headers = {"accept": "application/json","X-API-KEY":VYBE_API_KEY}
-
+    headers = {"accept": "application/json", "X-API-KEY": VYBE_API_KEY}
     response = requests.get(url, headers=headers)
-
     data = response.json()
 
     identified_addresses = {}
-    for account in data['accounts']:
-        address = account.get('ownerAddress')
-        address = address.lower()
-        name = account.get('name')
+    for account in data.get('accounts', []):
+        address = account.get('ownerAddress', '').lower()
+        name = account.get('name', '')
         identified_addresses[address] = name
+
+    # Save to cache
+    with open(cache_file, 'w') as f:
+        json.dump(identified_addresses, f)
 
     return identified_addresses
 
 def get_vybe_identified_programs(use_cache=True):
+    cache_file = os.path.join(CACHE_DIR, "vybe_identified_programs.json")
+
+    if use_cache and os.path.exists(cache_file):
+        with open(cache_file, 'r') as f:
+            return json.load(f)
 
     url = "https://api.vybenetwork.xyz/program/known-program-accounts"
-
-    headers = {"accept": "application/json","X-API-KEY":VYBE_API_KEY}
-
+    headers = {"accept": "application/json", "X-API-KEY": VYBE_API_KEY}
     response = requests.get(url, headers=headers)
-
     data = response.json()
 
     identified_programs = {}
-
-    for account in data['programs']:
-        program_id = account.get('programId')
-        program_id = program_id.lower()
-        name = account.get('name')
+    for account in data.get('programs', []):
+        program_id = account.get('programId', '').lower()
+        name = account.get('name', '')
         identified_programs[program_id] = name
+
+    # Save to cache
+    with open(cache_file, 'w') as f:
+        json.dump(identified_programs, f)
 
     return identified_programs
 

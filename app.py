@@ -5,6 +5,7 @@ from src.data_processing import get_comprehensive_tx_history, construct_tx_datas
 from src.entity_labeling import add_entity_labels
 from src.wallet_analysis import WalletAnalysis
 import os
+import json
 import pandas as pd
 from dotenv import load_dotenv
 
@@ -15,14 +16,17 @@ HELIUS_API_KEY = os.getenv('HELIUS_API_KEY')
 use_cache = True # For testing
 test_address = 'AGPZnBZUxmhAtcp8XjT4n8bCia9dEYhhm16M2sfFvmTU'
 
+ROOT_DIR = os.getcwd()
+DATA_DIR = os.path.join(ROOT_DIR, 'data', 'processed', 'backend_response.json')
+
 def create_app():
     app = Flask(__name__)
 
     @app.route('/')
     def home():
-        return print('running app')
+        return "App is running"
     
-    @app.route('/analyze_address', methods=['POST'])
+    @app.route('/api/analyze_address', methods=['POST'])
     def analyze_address():
         data = request.get_json()
         address = data.get('address')
@@ -99,7 +103,12 @@ def create_app():
         print('tx_graph', type(tx_graph))
         print('results', type(results))
 
-        return jsonify(jsonify_safe(results))
+        json_results = jsonify_safe(results)
+
+        with open(DATA_DIR, 'w') as f:
+            json.dump(json_results, f)
+
+        return jsonify(json_results)
     
     return app
         
