@@ -52,6 +52,34 @@ def load_metasleuth_labels():
 
     return entities_dict
 
+def classify_category(entity):
+    entity = entity.lower()
+
+    # Exchanges
+    if any(keyword in entity for keyword in ['openbook', 'raydium', 'orca', 'jupiter', 'meteora', 'coinbase']):
+        return 'Exchange'
+
+    # NFT Traders or Platforms
+    if any(keyword in entity for keyword in ['magic eden', 'nft', 'digitaleyes', 'tensor']):
+        return 'NFT Trader'
+
+    # Rug pulls (hardcoded suspicious names or memes)
+    if any(keyword in entity for keyword in ['rug', 'bricked', 'scam', 'meme']):
+        return 'Rug Pull'
+    
+    if any(keyword in entity for keyword in ['allbridge']):
+        return 'Bridge'
+    
+    if any(keyword in entity for keyword in ['airdrop','pengu']):
+        return 'Airdrop'
+
+    # DeFi protocols
+    if any(keyword in entity for keyword in ['uxd', 'usdh', 'softt', 'vault', 'solend', 'lending','lend','kamino','parcl']):
+        return 'DeFi Protocol'
+
+    # Default fallback
+    return 'Other'
+
 def add_entity_labels(df_og, address):
 
     df = df_og.copy()
@@ -83,6 +111,10 @@ def add_entity_labels(df_og, address):
 
     df['program_name'] = df['program_id'].astype(str).str.lower().map(
         lambda pid: vybe_programs_map.get(pid, 'Unknown Program'))
+    
+    df['sender_category'] = df['sender_name'].apply(classify_category)
+    df['receiver_category'] = df['receiver_name'].apply(classify_category)
+    df['program_category'] = df['program_name'].apply(classify_category)
     
     df['wallet_entity_label'] = combined_address_label_map.get(address.lower(), 'Unknown Entity')
 
