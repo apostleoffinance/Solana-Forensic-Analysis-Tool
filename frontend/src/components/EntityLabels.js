@@ -1,47 +1,117 @@
 'use client';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import cytoscape from 'cytoscape';
 import popper from 'cytoscape-popper';
 
 // Register popper extension with Cytoscape
 cytoscape.use(popper);
 
-export default function EntityLabels({ entities }) {
-  const [selectedEntity, setSelectedEntity] = useState(entities[0]);
+export default function EntityLabels({ tx_graph, wallet_analysis }) {
+  const [selectedEntity, setSelectedEntity] = useState(null);
   const [viewMode, setViewMode] = useState('table'); // 'table' or 'graph'
   const containerRef = useRef();
+
+  // Memoize entities to prevent recreation on every render
+  const entities = useMemo(() => {
+    return Object.values(tx_graph?.nodes || {})
+      .filter(node => node.id && node.id !== '')
+      .map((node, index) => {
+        const isTargetWallet = node.id === wallet_analysis?.activity_patterns?.wallet_address;
+        const patterns = isTargetWallet
+          ? [
+              ...Object.entries(wallet_analysis?.funding_sources?.[0]?.['Token Received (Total)'] || {}).flatMap(([currency, amountObj], idx) =>
+                Object.entries(amountObj).map(([token, amount]) => ({
+                  type: 'Deposit',
+                  amount,
+                  currency: `${currency} (${token})`,
+                  timestamp: new Date(
+                    new Date(wallet_analysis?.transaction_history?.first_transaction || Date.now()).getTime() +
+                      (idx * (new Date(wallet_analysis?.transaction_history?.last_transaction || Date.now()) - new Date(wallet_analysis?.transaction_history?.first_transaction || Date.now())) / (wallet_analysis?.transaction_history?.num_transactions || 1))
+                  ).toISOString(),
+                  target: (tx_graph?.edges || []).find((e) => e.to === node.id)?.from || 'Unknown',
+                }))
+              ),
+              ...Object.entries(wallet_analysis?.funding_sources?.[0]?.['Token Sent (Total)'] || {}).flatMap(([currency, amountObj], idx) =>
+                Object.entries(amountObj).map(([token, amount]) => ({
+                  type: 'Withdrawal',
+                  amount,
+                  currency: `${currency} (${token})`,
+                  timestamp: new Date(
+                    new Date(wallet_analysis?.transaction_history?.first_transaction || Date.now()).getTime() +
+                      ((idx + Object.keys(wallet_analysis?.funding_sources?.[0]?.['Token Received (Total)'] || {}).length) *
+                        (new Date(wallet_analysis?.transaction_history?.last_transaction || Date.now()) - new Date(wallet_analysis?.transaction_history?.first_transaction || Date.now())) /
+                        (wallet_analysis?.transaction_history?.num_transactions || 1))
+                  ).toISOString(),
+                  target: (tx_graph?.edges || []).find((e) => e.from === node.id)?.to || 'Unknown',
+                }))
+              ),
+            ]
+          : [];
+    
+        const associatedEntities = (tx_graph?.edges || [])
+          .filter((e) => e.from === node.id || e.to === node.id)
+          .filter((e) => e.from && e.to)
+          .map((e) => {
+            const relatedNodeId = e.from === node.id ? e.to : e.from;
+            const relatedNode = tx_graph?.nodes?.[relatedNodeId];
+            return relatedNode?.label;
+          })
+          .filter((label) => label && label !== node.label);
+        return {
+          wallet: `${node.id.slice(0, 4)}...${node.id.slice(-4)}`,
+          fullAddress: node.id,
+          network: 'Solana',
+          label: node.label,
+          labelMetadata: {
+            confidence: node.label.includes('Unknown') ? 0.60 : 0.95,
+          },
+          patterns,
+          associatedEntities: [...new Set(associatedEntities)],
+        };
+      });
+  }, [tx_graph, wallet_analysis]);
+
+  // Set initial selected entity
+  useEffect(() => {
+    if (!selectedEntity || selectedEntity.fullAddress !== wallet_analysis?.activity_patterns?.wallet_address) {
+      const targetEntity = entities.find((e) => e.fullAddress === wallet_analysis?.activity_patterns?.wallet_address);
+      const newSelectedEntity = targetEntity || entities[0];
+      setSelectedEntity(newSelectedEntity);
+    }
+  }, [entities, wallet_analysis]); // Remove selectedEntity from dependencies
+
+  // Log selectedEntity updates
+  useEffect(() => {
+    console.log('selectedEntity updated:', selectedEntity);
+  }, [selectedEntity]);
 
   // Calculate summary statistics
   const summary = {
     totalEntities: entities.length,
-    exchanges: entities.filter((e) =>
-      e.label.toLowerCase().includes('exchange')
-    ).length,
-    defiProjects: entities.filter((e) =>
-      e.label.toLowerCase().includes('defi')
-    ).length,
-    unknown: entities.filter((e) =>
-      e.label.toLowerCase().includes('unknown')
-    ).length,
+    exchanges: entities.filter((e) => e.label.toLowerCase().includes('exchange')).length,
+    defiProjects: entities.filter((e) => e.label.toLowerCase().includes('jupiter') || e.label.toLowerCase().includes('orca') || e.label.toLowerCase().includes('raydium')).length,
+    unknown: entities.filter((e) => e.label.toLowerCase().includes('unknown')).length,
   };
 
   // Cytoscape.js setup
   useEffect(() => {
-    if (viewMode !== 'graph') return;
+    if (viewMode !== 'graph' || !containerRef.current) return;
 
     const cy = cytoscape({
       container: containerRef.current,
-      elements: generateElements(entities),
+      elements: generateElements(entities, tx_graph?.edges || [], wallet_analysis),
       style: [
         {
           selector: 'node[type="wallet"]',
           style: {
             'background-color': (ele) => {
               const label = ele.data('label').toLowerCase();
-              if (label.includes('exchange')) return '#FFD700'; // Gold for exchanges
-              if (label.includes('defi')) return '#84CC16'; // Green for DeFi (matches --accent-green)
-              if (label.includes('unknown')) return '#A1A1AA'; // Gray for unknown (matches --text-secondary)
-              return '#3B82F6'; // Default blue (matches --accent-blue)
+              if (label.includes('exchange')) return '#FFD700';
+              if (label.includes('jupiter')) return 'var(--accent-purple)';
+              if (label.includes('orca')) return 'var(--accent-teal)';
+              if (label.includes('raydium')) return 'var(--accent-pink)';
+              if (label.includes('unknown')) return 'var(--text-secondary)';
+              return 'var(--accent-blue)';
             },
             'label': 'data(label)',
             'width': 50,
@@ -61,7 +131,7 @@ export default function EntityLabels({ entities }) {
         {
           selector: 'node[type="entity"]',
           style: {
-            'background-color': '#FFD700', // Gold for associated entities
+            'background-color': '#FFD700',
             'label': 'data(label)',
             'width': 30,
             'height': 30,
@@ -81,10 +151,8 @@ export default function EntityLabels({ entities }) {
           selector: 'edge',
           style: {
             'width': 2,
-            'line-color': (ele) =>
-              ele.data('unusual') ? '#E11D48' : '#A1A1AA', // Red for unusual, gray for normal
-            'target-arrow-color': (ele) =>
-              ele.data('unusual') ? '#E11D48' : '#A1A1AA',
+            'line-color': (ele) => (ele.data('unusual') ? 'var(--accent-red)' : 'var(--text-secondary)'),
+            'target-arrow-color': (ele) => (ele.data('unusual') ? 'var(--accent-red)' : 'var(--text-secondary)'),
             'target-arrow-shape': 'triangle',
             'curve-style': 'bezier',
             'label': 'data(label)',
@@ -131,12 +199,7 @@ export default function EntityLabels({ entities }) {
               <h3>${id}</h3>
               <p><strong>Type:</strong> ${type === 'wallet' ? 'Wallet' : 'Entity'}</p>
               <p><strong>Label:</strong> ${label}</p>
-              ${
-                type === 'wallet'
-                  ? `<p><strong>Confidence:</strong> ${(confidence * 100).toFixed(1)}%</p>
-                     ${patternsHTML}`
-                  : ''
-              }
+              ${type === 'wallet' ? `<p><strong>Confidence:</strong> ${(confidence * 100).toFixed(1)}%</p>${patternsHTML}` : ''}
             </div>
           `;
           document.body.appendChild(div);
@@ -159,7 +222,7 @@ export default function EntityLabels({ entities }) {
     return () => {
       cy.destroy();
     };
-  }, [entities, viewMode]);
+  }, [viewMode, entities, tx_graph, wallet_analysis]);
 
   return (
     <div className="entity-labels">
@@ -183,10 +246,7 @@ export default function EntityLabels({ entities }) {
       {viewMode === 'graph' && (
         <div className="graph-view">
           <h3>Entity Network Visualization</h3>
-          <div
-            ref={containerRef}
-            className="cy-container"
-          />
+          <div ref={containerRef} className="cy-container" />
         </div>
       )}
 
@@ -230,10 +290,8 @@ export default function EntityLabels({ entities }) {
               </div>
               {entities.map((entity) => (
                 <div
-                  key={entity.wallet}
-                  className={`table-row ${
-                    selectedEntity.wallet === entity.wallet ? 'selected' : ''
-                  }`}
+                  key={entity.fullAddress}
+                  className={`table-row ${selectedEntity?.fullAddress === entity.fullAddress ? 'selected' : ''}`}
                 >
                   <span>{entity.wallet}</span>
                   <span>{entity.label}</span>
@@ -243,7 +301,10 @@ export default function EntityLabels({ entities }) {
                   <span>
                     <button
                       className="action-btn"
-                      onClick={() => setSelectedEntity(entity)}
+                      onClick={() => {
+                        const newEntity = { ...entity, timestamp: Date.now() };
+                        setSelectedEntity(newEntity);
+                      }}
                     >
                       View Patterns
                     </button>
@@ -256,71 +317,61 @@ export default function EntityLabels({ entities }) {
           {/* Deposit/Withdrawal Patterns */}
           {selectedEntity && (
             <div className="patterns-section">
-              <h3>
-                Deposit/Withdrawal Patterns for {selectedEntity.wallet}
-              </h3>
-              <div className="patterns-table">
-                <div className="table-header">
-                  <span>Type</span>
-                  <span>Amount</span>
-                  <span>Target</span>
-                  <span>Timestamp</span>
-                </div>
-                {selectedEntity.patterns.map((pattern, index) => (
-                  <div
-                    key={index}
-                    className={`table-row ${
-                      pattern.target.toLowerCase().includes('mixer') ||
-                      pattern.target.toLowerCase().includes('dark')
-                        ? 'unusual-row'
-                        : ''
-                    }`}
-                  >
-                    <span>{pattern.type}</span>
-                    <span>
-                      {pattern.amount} {pattern.currency}
-                    </span>
-                    <span>{pattern.target}</span>
-                    <span>{new Date(pattern.timestamp).toLocaleString()}</span>
+              <h3>Deposit/Withdrawal Patterns for {selectedEntity.wallet}</h3>
+              {selectedEntity.patterns.length > 0 ? (
+                <>
+                  <div className="patterns-table">
+                    <div className="table-header">
+                      <span>Type</span>
+                      <span>Amount</span>
+                      <span>Target</span>
+                      <span>Timestamp</span>
+                    </div>
+                    {selectedEntity.patterns.map((pattern, index) => (
+                      <div
+                        key={index}
+                        className={`table-row ${pattern.target.toLowerCase().includes('unknown') ? 'unusual-row' : ''}`}
+                      >
+                        <span>{pattern.type}</span>
+                        <span>{pattern.amount} {pattern.currency}</span>
+                        <span>{pattern.target}</span>
+                        <span>{new Date(pattern.timestamp).toLocaleString()}</span>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-              <div className="patterns-summary">
-                <h4>Pattern Insights</h4>
-                <p>
-                  <strong>Deposit Frequency:</strong>{' '}
-                  {
-                    selectedEntity.patterns.filter((p) => p.type === 'Deposit')
-                      .length
-                  }{' '}
-                  deposits in the last 30 days
-                </p>
-                <p>
-                  <strong>Withdrawal Frequency:</strong>{' '}
-                  {
-                    selectedEntity.patterns.filter((p) => p.type === 'Withdrawal')
-                      .length
-                  }{' '}
-                  withdrawals in the last 30 days
-                </p>
-                <p>
-                  <strong>Total Volume:</strong>{' '}
-                  {selectedEntity.patterns
-                    .reduce((sum, p) => sum + p.amount, 0)
-                    .toFixed(2)}{' '}
-                  {selectedEntity.patterns[0]?.currency || 'ETH'}
-                </p>
-                <p>
-                  <strong>Unusual Patterns:</strong>{' '}
-                  {selectedEntity.patterns.some(
-                    (p) =>
-                      p.target.toLowerCase().includes('mixer') ||
-                      p.target.toLowerCase().includes('dark')
-                  )
-                    ? 'Yes (Potential Mixer or Dark Web Activity)'
-                    : 'None'}
-                </p>
-              </div>
+                  <div className="patterns-summary">
+                    <h4>Pattern Insights</h4>
+                    <p>
+                      <strong>Deposit Frequency:</strong>{' '}
+                      {selectedEntity.patterns.filter((p) => p.type === 'Deposit').length} deposits
+                    </p>
+                    <p>
+                      <strong>Withdrawal Frequency:</strong>{' '}
+                      {selectedEntity.patterns.filter((p) => p.type === 'Withdrawal').length} withdrawals
+                    </p>
+                    <p>
+                      <strong>Total Volume:</strong>{' '}
+                      {Object.entries(
+                        selectedEntity.patterns.reduce((acc, p) => {
+                          const [baseCurrency] = p.currency.split(' (');
+                          acc[baseCurrency] = (acc[baseCurrency] || 0) + (typeof p.amount === 'number' ? p.amount : 0);
+                          return acc;
+                        }, {})
+                      )
+                        .map(([currency, amount]) => `${amount.toFixed(2)} ${currency}`)
+                        .join(', ') || '0.00'}
+                    </p>
+                    <p>
+                      <strong>Unusual Patterns:</strong>{' '}
+                      {selectedEntity.patterns.some((p) => p.target.toLowerCase().includes('unknown'))
+                        ? 'Yes (Unknown Counterparty)'
+                        : 'None'}
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <p>No deposit/withdrawal patterns available for this wallet.</p>
+              )}
             </div>
           )}
         </>
@@ -405,13 +456,25 @@ export default function EntityLabels({ entities }) {
           display: flex;
           flex-direction: column;
         }
-        .table-header, .table-row {
+        .table-header,
+        .table-row {
           display: grid;
           grid-template-columns: 1fr 2fr 1fr 1fr 2fr 1fr;
           gap: 0.5rem;
           padding: 0.5rem 0;
           border-bottom: 1px solid var(--border);
           font-size: 0.85rem;
+        }
+        @media (max-width: 768px) {
+          .table-header,
+          .table-row {
+            grid-template-columns: 1fr;
+            text-align: left;
+          }
+          .table-header span,
+          .table-row span {
+            padding: 0.25rem 0;
+          }
         }
         .table-header {
           font-weight: 600;
@@ -434,7 +497,7 @@ export default function EntityLabels({ entities }) {
           transition: background-color 0.2s ease;
         }
         .action-btn:hover {
-          background-color: #2563eb; /* Slightly darker blue */
+          background-color: #2563eb;
         }
         .patterns-section {
           background-color: var(--card-bg);
@@ -447,8 +510,15 @@ export default function EntityLabels({ entities }) {
           flex-direction: column;
           margin-bottom: 1rem;
         }
-        .patterns-table .table-header, .patterns-table .table-row {
+        .patterns-table .table-header,
+        .patterns-table .table-row {
           grid-template-columns: 1fr 1fr 2fr 2fr;
+        }
+        @media (max-width: 768px) {
+          .patterns-table .table-header,
+          .patterns-table .table-row {
+            grid-template-columns: 1fr;
+          }
         }
         .table-row.unusual-row {
           color: var(--accent-red);
@@ -461,19 +531,24 @@ export default function EntityLabels({ entities }) {
         }
       `}</style>
       <style jsx global>{`
+        :root {
+          --accent-purple: #7B3FE4;
+          --accent-teal: #26A69A;
+          --accent-pink: #FF2D55;
+        }
         .cy-tooltip {
           background-color: rgba(26, 32, 44, 0.95);
           color: var(--text-primary);
-          padding: 10px;
+          padding: 12px;
           border-radius: 4px;
-          font-size: 12px;
+          font-size: 14px;
           z-index: 10000;
-          max-width: 250px;
+          max-width: 300px;
           box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
         }
         .cy-tooltip .tooltip-content h3 {
           margin: 0 0 8px 0;
-          font-size: 14px;
+          font-size: 16px;
           font-weight: 600;
         }
         .cy-tooltip .tooltip-content p {
@@ -482,7 +557,7 @@ export default function EntityLabels({ entities }) {
         }
         .cy-tooltip .tooltip-content h4 {
           margin: 8px 0 4px 0;
-          font-size: 12px;
+          font-size: 14px;
           color: var(--text-secondary);
         }
         .cy-tooltip .tooltip-content ul {
@@ -491,7 +566,7 @@ export default function EntityLabels({ entities }) {
           margin: 0;
         }
         .cy-tooltip .tooltip-content li {
-          font-size: 11px;
+          font-size: 12px;
           margin-bottom: 4px;
         }
       `}</style>
@@ -500,14 +575,15 @@ export default function EntityLabels({ entities }) {
 }
 
 // Helper function to convert entities into Cytoscape elements
-function generateElements(entities) {
+function generateElements(entities, edges, wallet_analysis) {
   const elements = [];
 
   // Add wallet nodes
   entities.forEach((entity) => {
+    if (!entity.fullAddress) return;
     elements.push({
       data: {
-        id: entity.wallet,
+        id: entity.fullAddress,
         label: `${entity.wallet}\n${entity.label}`,
         type: 'wallet',
         confidence: entity.labelMetadata.confidence,
@@ -515,8 +591,9 @@ function generateElements(entities) {
       },
     });
 
-    // Add nodes for associated entities (e.g., Binance, Aave) and edges to them
+    // Add nodes for associated entities and edges
     entity.associatedEntities.forEach((assocEntity) => {
+      if (!assocEntity) return;
       if (!elements.some((el) => el.data.id === assocEntity)) {
         elements.push({
           data: {
@@ -526,20 +603,24 @@ function generateElements(entities) {
           },
         });
       }
-      elements.push({
-        data: {
-          id: `${entity.wallet}-to-${assocEntity}`,
-          source: entity.wallet,
-          target: assocEntity,
-          label: 'Associated',
-          unusual: assocEntity.toLowerCase().includes('mixer') || assocEntity.toLowerCase().includes('dark'),
-        },
-      });
+      const edgeId = `${entity.fullAddress}-to-${assocEntity}`;
+      if (!edgeId.includes('')) {
+        elements.push({
+          data: {
+            id: edgeId,
+            source: entity.fullAddress,
+            target: assocEntity,
+            label: 'Associated',
+            unusual: assocEntity.toLowerCase().includes('unknown'),
+          },
+        });
+      }
     });
 
-    // Add edges for deposit/withdrawal patterns
+    // Add edges for patterns
     entity.patterns.forEach((pattern) => {
       const target = pattern.target;
+      if (!target) return;
       if (!elements.some((el) => el.data.id === target)) {
         elements.push({
           data: {
@@ -549,17 +630,18 @@ function generateElements(entities) {
           },
         });
       }
-      elements.push({
-        data: {
-          id: `${entity.wallet}-to-${target}-${pattern.timestamp}`,
-          source: entity.wallet,
-          target: target,
-          label: `${pattern.type}: ${pattern.amount} ${pattern.currency}`,
-          unusual:
-            target.toLowerCase().includes('mixer') ||
-            target.toLowerCase().includes('dark'),
-        },
-      });
+      const edgeId = `${entity.fullAddress}-to-${target}-${pattern.timestamp}`;
+      if (!edgeId.includes('')) {
+        elements.push({
+          data: {
+            id: edgeId,
+            source: entity.fullAddress,
+            target: target,
+            label: `${pattern.type}: ${pattern.amount} ${pattern.currency}`,
+            unusual: target.toLowerCase().includes('unknown'),
+          },
+        });
+      }
     });
   });
 
