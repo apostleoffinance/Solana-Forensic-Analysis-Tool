@@ -25,7 +25,7 @@ export function DataProvider({ children }) {
       }
 
       const result = await response.json();
-      console.log('Analysis Result:', result);
+  
       return result;
     } catch (err) {
       console.error('Error analyzing address:', err);

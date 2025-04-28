@@ -2,19 +2,13 @@
 import { useState, useEffect } from 'react';
 
 export default function TransactionClusters({ tx_graph, wallet_analysis }) {
-  // Debug the funding_sources structure
-  console.log('wallet_analysis.funding_sources[0]:', wallet_analysis.funding_sources[0]);
 
   // Adjust for possible nested structure
   const fundingData = wallet_analysis.funding_sources[0].token_amount || wallet_analysis.funding_sources[0];
   const tokenReceived = fundingData['Token Received (Total)'] || {};
   const tokenSent = fundingData['Token Sent (Total)'] || {};
   const allTokens = [...new Set([...Object.keys(tokenReceived), ...Object.keys(tokenSent)])];
-  
-  // Debug token lists
-  console.log('tokenReceived:', tokenReceived);
-  console.log('tokenSent:', tokenSent);
-  console.log('allTokens:', allTokens);
+
 
   const clusters = allTokens.map((token, index) => {
     const transactions = [];
@@ -68,9 +62,6 @@ export default function TransactionClusters({ tx_graph, wallet_analysis }) {
       });
     }
 
-    // Debug transactions structure
-    console.log(`Transactions for cluster ${token}:`, transactions);
-
     return {
       id: `Cluster ${index + 1} (${token})`,
       transactions,
@@ -82,15 +73,6 @@ export default function TransactionClusters({ tx_graph, wallet_analysis }) {
   });
 
   const [selectedCluster, setSelectedCluster] = useState(clusters[0]);
-
-  // Debug styling application
-  useEffect(() => {
-    const card = document.querySelector('.cluster-selector');
-    if (card) {
-      const computedBg = window.getComputedStyle(card).backgroundColor;
-      console.log('TransactionClusters cluster-selector background:', computedBg);
-    }
-  }, []);
 
   return (
     <div className="transaction-clusters">

@@ -70,8 +70,6 @@ const TransactionFlow = ({ tx_graph }) => {
         address.toLowerCase().includes(searchText) || node.label.toLowerCase().includes(searchText)
       );
 
-      console.log('Matching nodes:', matchingNodes.map(([address]) => address));
-
       // Add matching nodes to filteredAddresses
       matchingNodes.forEach(([address]) => {
         filteredAddresses.add(address);
@@ -114,9 +112,6 @@ const TransactionFlow = ({ tx_graph }) => {
       // Convert filteredEdges back to array of edge objects
       filteredEdgeList = [...filteredEdges].map(edge => JSON.parse(edge));
     }
-
-    console.log('Filtered nodes:', [...filteredAddresses]);
-    console.log('Filtered edges:', filteredEdgeList);
   }
 
   // Create the filtered graph to pass to the Graph component

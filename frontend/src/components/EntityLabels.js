@@ -80,10 +80,6 @@ export default function EntityLabels({ tx_graph, wallet_analysis }) {
     }
   }, [entities, wallet_analysis]); // Remove selectedEntity from dependencies
 
-  // Log selectedEntity updates
-  useEffect(() => {
-    console.log('selectedEntity updated:', selectedEntity);
-  }, [selectedEntity]);
 
   // Calculate summary statistics
   const summary = {

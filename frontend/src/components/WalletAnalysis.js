@@ -6,7 +6,7 @@ export default function WalletAnalysis( { wallet_analysis, tx_graph }) {
 
   // Extract key data
   const walletAddress = activity_patterns.wallet_address;
-  const network = 'SOL Network'; // Assuming Solana based on addresses
+  const network = 'SOL Network';
   const activePeriodDays = activity_patterns.active_period_days;
   const avgTxPerDay = activity_patterns.avg_tx_per_day.toFixed(2);
   const senderToReceiverRatio = activity_patterns.sender_to_receiver_ratio.toFixed(2);
