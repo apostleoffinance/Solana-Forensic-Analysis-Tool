@@ -1,548 +1,146 @@
-// src/components/TransactionFlow.js
 'use client';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
+import { Canvas, useFrame } from '@react-three/fiber';
+import { OrbitControls, Sphere } from '@react-three/drei';
 import * as THREE from 'three';
-import { gsap } from 'gsap';
 
-const TransactionFlow = ({ 
-  transactions, 
-  className = ''
-}) => {
-  const containerRef = useRef(null);
-  const sceneRef = useRef(null);
-  const cameraRef = useRef(null);
-  const rendererRef = useRef(null);
-  const transactionSystemRef = useRef(null);
-  const hackerNodeRef = useRef(null);
-  const addressNodesRef = useRef({});
-  const transactionLinesRef = useRef([]);
-  const tooltipRef = useRef(null);
-  const infoCardRef = useRef(null);
-  const animationFrameId = useRef(null);
-  const [dateFilter, setDateFilter] = useState('');
-  const [amountFilter, setAmountFilter] = useState(0);
+// Function to create a canvas texture for the sprite
+const createSpriteTexture = (text) => {
+  const canvas = document.createElement('canvas');
+  const context = canvas.getContext('2d');
+  canvas.width = 256;
+  canvas.height = 128;
+  context.fillStyle = 'rgba(0, 0, 0, 0.7)';
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.font = '24px Arial';
+  context.fillStyle = '#ffffff';
+  context.textAlign = 'center';
+  context.fillText(text?.substring(0, 10) + '...' || 'Unknown...', canvas.width / 2, canvas.height / 2);
+  return canvas;
+};
 
-  useEffect(() => {
-    if (!containerRef.current || !transactions) {
-      return;
-    }
+// TransactionFlow Component
+const TransactionFlow = ({ tx_graph }) => {
+  const [selectedNode, setSelectedNode] = useState(null);
+  const [addressFilter, setAddressFilter] = useState(''); // Filter by address or label
+  const [amountFilter, setAmountFilter] = useState(0); // Filter by minimum transaction amount
 
-    // Scene Setup
-    const container = containerRef.current;
-    const containerRect = container.getBoundingClientRect();
-    let containerWidth = containerRect.width;
-    let containerHeight = containerRect.height;
+  if (!tx_graph || !tx_graph.nodes || !tx_graph.edges) {
+    return <div>Invalid transaction graph data</div>;
+  }
 
-    // Fallback if dimensions are 0
-    if (containerWidth === 0 || containerHeight === 0) {
-      console.warn('Container has zero dimensions, using fallback size');
-      containerWidth = 600;
-      containerHeight = 500;
-    }
+  // Determine if there is something to filter
+  const hasFilter = addressFilter.trim() !== '' || amountFilter > 0;
 
-    const scene = new THREE.Scene();
-    sceneRef.current = scene;
-
-    const camera = new THREE.PerspectiveCamera(75, containerWidth / containerHeight, 0.1, 1000);
-    cameraRef.current = camera;
-    camera.position.z = 12;
-
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    rendererRef.current = renderer;
-    renderer.setSize(containerWidth, containerHeight);
-    renderer.domElement.style.height = '1000px';
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    container.appendChild(renderer.domElement);
-
-    // Tooltip and Info Card Setup
-    const tooltip = document.createElement('div');
-    tooltip.className = 'address-tooltip';
-    tooltip.style.display = 'none';
-    document.body.appendChild(tooltip);
-    tooltipRef.current = tooltip;
-
-    const infoCard = document.createElement('div');
-    infoCard.className = 'address-info-card';
-    infoCard.style.display = 'none';
-    container.appendChild(infoCard);
-    infoCardRef.current = infoCard;
-
-    // Filter Transactions
-    let filteredTransactions = transactions.filter(tx => {
-      const matchesDate = dateFilter ? tx.date === dateFilter : true;
-      const matchesAmount = tx.amount >= amountFilter;
-      return matchesDate && matchesAmount;
+  // Calculate hacker address (same logic as in Graph component)
+  const addressVolume = useMemo(() => {
+    const volumeMap = new Map();
+    tx_graph.edges.forEach(edge => {
+      const value = Number(edge.value) || 0;
+      volumeMap.set(edge.from, (volumeMap.get(edge.from) || 0) + value);
+      volumeMap.set(edge.to, (volumeMap.get(edge.to) || 0) + value);
     });
+    return volumeMap;
+  }, [tx_graph.edges]);
 
-    // Fallback if filteredTransactions is empty
-    if (filteredTransactions.length === 0) {
-      filteredTransactions = transactions;
+  const hackerAddress = useMemo(() => {
+    let max = 0;
+    let hacker = tx_graph.edges.length > 0 ? tx_graph.edges[0]?.to : null;
+    addressVolume.forEach((volume, address) => {
+      if (volume > max) {
+        max = volume;
+        hacker = address;
+      }
+    });
+    return hacker;
+  }, [addressVolume, tx_graph.edges]);
+
+  // Create filtered lists
+  let filteredNodeList = tx_graph.nodes;
+  let filteredEdgeList = tx_graph.edges;
+
+  if (hasFilter) {
+    const filteredAddresses = new Set();
+    const filteredEdges = new Set();
+
+    // Step 1: Address Filter - Find nodes that match the address or label
+    if (addressFilter.trim() !== '') {
+      const searchText = addressFilter.toLowerCase();
+      const matchingNodes = Object.entries(tx_graph.nodes).filter(([address, node]) =>
+        address.toLowerCase().includes(searchText) || node.label.toLowerCase().includes(searchText)
+      );
+
+      console.log('Matching nodes:', matchingNodes.map(([address]) => address));
+
+      // Add matching nodes to filteredAddresses
+      matchingNodes.forEach(([address]) => {
+        filteredAddresses.add(address);
+      });
+
+      // Include all edges connected to these nodes
+      tx_graph.edges.forEach(edge => {
+        if (filteredAddresses.has(edge.from) || filteredAddresses.has(edge.to)) {
+          filteredEdges.add(JSON.stringify(edge));
+          filteredAddresses.add(edge.from);
+          filteredAddresses.add(edge.to);
+        }
+      });
     }
 
-    // Transaction System Setup
-    const transactionSystem = new THREE.Group();
-    transactionSystemRef.current = transactionSystem;
-    scene.add(transactionSystem);
+    // Step 2: Amount Filter - Include edges that match the amount filter
+    if (amountFilter > 0) {
+      tx_graph.edges.forEach(edge => {
+        const value = Number(edge.value) || 0;
+        if (value >= amountFilter) {
+          filteredEdges.add(JSON.stringify(edge));
+          filteredAddresses.add(edge.from);
+          filteredAddresses.add(edge.to);
+        }
+      });
+    }
 
-    // Find Hacker Address
-    let hackerAddress = null;
-    const hackerTx = filteredTransactions.find(tx => tx.entity === 'Hacker');
-    if (hackerTx) {
-      hackerAddress = hackerTx.target;
+    // If no matches found, show nothing
+    if (filteredAddresses.size === 0 && filteredEdges.size === 0) {
+      filteredNodeList = {};
+      filteredEdgeList = [];
     } else {
-      const criticalAddresses = new Map();
-      filteredTransactions.filter(tx => tx.critical).forEach(tx => {
-        criticalAddresses.set(tx.source, (criticalAddresses.get(tx.source) || 0) + 1);
-        criticalAddresses.set(tx.target, (criticalAddresses.get(tx.target) || 0) + 1);
-      });
-      let maxCount = 0;
-      criticalAddresses.forEach((count, address) => {
-        if (count > maxCount) {
-          maxCount = count;
-          hackerAddress = address;
-        }
-      });
-    }
-    if (!hackerAddress && filteredTransactions.some(tx => tx.critical)) {
-      hackerAddress = filteredTransactions.find(tx => tx.critical).target;
-    }
-    if (!hackerAddress && filteredTransactions.length > 0) {
-      hackerAddress = filteredTransactions[0].target;
+      // Create filtered node list
+      filteredNodeList = Object.fromEntries(
+        [...filteredAddresses]
+          .filter(address => tx_graph.nodes[address])
+          .map(address => [address, tx_graph.nodes[address]])
+      );
+
+      // Convert filteredEdges back to array of edge objects
+      filteredEdgeList = [...filteredEdges].map(edge => JSON.parse(edge));
     }
 
-    const addresses = new Set();
-    filteredTransactions.forEach(tx => {
-      addresses.add(tx.source);
-      addresses.add(tx.target);
-    });
-    if (hackerAddress) addresses.delete(hackerAddress);
-    const addressList = [...addresses];
+    console.log('Filtered nodes:', [...filteredAddresses]);
+    console.log('Filtered edges:', filteredEdgeList);
+  }
 
-    // Hacker Node (Sphere)
-    const hackerGeometry = new THREE.SphereGeometry(0.8, 32, 32);
-    const hackerMaterial = new THREE.MeshPhongMaterial({
-      color: 0xE11D48,
-      emissive: 0xE11D48,
-      emissiveIntensity: 0.5,
-      shininess: 100,
-    });
-    const hackerNode = new THREE.Mesh(hackerGeometry, hackerMaterial);
-    hackerNode.userData = { 
-      address: hackerAddress, 
-      isHacker: true,
-      entity: 'Hacker',
-      transactions: filteredTransactions.filter(tx => tx.source === hackerAddress || tx.target === hackerAddress)
-    };
-    hackerNodeRef.current = hackerNode;
-    transactionSystem.add(hackerNode);
-
-    const createTextSprite = (text, position, color = 0xffffff, scale = 0.5) => {
-      const canvas = document.createElement('canvas');
-      const context = canvas.getContext('2d');
-      canvas.width = 256;
-      canvas.height = 128;
-      context.fillStyle = 'rgba(0, 0, 0, 0.7)';
-      context.fillRect(0, 0, canvas.width, canvas.height);
-      context.font = '24px Arial';
-      context.fillStyle = '#ffffff';
-      context.textAlign = 'center';
-      context.fillText(text.substring(0, 10) + '...', canvas.width / 2, canvas.height / 2);
-      const texture = new THREE.CanvasTexture(canvas);
-      texture.needsUpdate = true;
-      const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
-      const sprite = new THREE.Sprite(spriteMaterial);
-      sprite.position.set(position.x, position.y + 1.2, position.z);
-      sprite.scale.set(scale * 3, scale * 1.5, scale);
-      return sprite;
-    };
-
-    if (hackerAddress) {
-      const hackerLabel = createTextSprite(hackerAddress, new THREE.Vector3(0, 0, 0), 0xE11D48, 0.6);
-      transactionSystem.add(hackerLabel);
-    }
-
-    // Address Nodes (Points)
-    const addressNodes = {};
-    addressNodesRef.current = addressNodes;
-
-    addressList.forEach((address, index) => {
-      const angleStep = (Math.PI * 2) / Math.min(addressList.length, 12);
-      const angle = angleStep * (index % 12);
-      const layer = Math.floor(index / 12);
-      const radius = 4 + layer * 2;
-      const x = Math.cos(angle) * radius;
-      const y = Math.sin(angle) * radius;
-      const z = (layer * 0.5) - 1;
-      const isCritical = filteredTransactions.some(tx => (tx.source === address || tx.target === address) && tx.critical);
-      const entityTx = filteredTransactions.find(tx => (tx.source === address || tx.target === address) && tx.entity);
-      const entity = entityTx ? entityTx.entity : 'Unknown';
-
-      const nodeGeometry = new THREE.BufferGeometry();
-      const positions = new Float32Array([x, y, z]);
-      nodeGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-
-      const nodeMaterial = new THREE.PointsMaterial({
-        color: isCritical ? 0xFF9500 : 0x84CC16,
-        size: 0.2,
-        transparent: true,
-        opacity: 0.8,
-        blending: THREE.AdditiveBlending,
-      });
-
-      const node = new THREE.Points(nodeGeometry, nodeMaterial);
-      node.userData = { 
-        address, 
-        isCritical,
-        entity,
-        transactions: filteredTransactions.filter(tx => tx.source === address || tx.target === address)
-      };
-      transactionSystem.add(node);
-
-      const label = createTextSprite(address, new THREE.Vector3(x, y, z), isCritical ? 0xFF9500 : 0x84CC16);
-      transactionSystem.add(label);
-
-      addressNodes[address] = { 
-        node, 
-        label, 
-        position: new THREE.Vector3(x, y, z), 
-        connections: [],
-        material: nodeMaterial
-      };
-    });
-
-    // Transaction Lines
-    const transactionLines = [];
-    transactionLinesRef.current = transactionLines;
-    filteredTransactions.forEach(tx => {
-      const createConnection = (sourcePos, targetPos, critical) => {
-        const points = [sourcePos, targetPos];
-        const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
-        const lineMaterial = new THREE.LineBasicMaterial({ 
-          color: critical ? 0xFF9500 : 0x84CC16,
-          transparent: true,
-          opacity: 0.6,
-          linewidth: critical ? 2 : 1
-        });
-        const line = new THREE.Line(lineGeometry, lineMaterial);
-        line.userData = { transaction: tx };
-        transactionSystem.add(line);
-        transactionLines.push(line);
-        return line;
-      };
-
-      const source = tx.source;
-      const target = tx.target;
-      if (source === hackerAddress && addressNodes[target]) {
-        const connection = createConnection(new THREE.Vector3(0, 0, 0), addressNodes[target].position, tx.critical);
-        addressNodes[target].connections.push(connection);
-      } else if (target === hackerAddress && addressNodes[source]) {
-        const connection = createConnection(addressNodes[source].position, new THREE.Vector3(0, 0, 0), tx.critical);
-        addressNodes[source].connections.push(connection);
-      } else if (addressNodes[source] && addressNodes[target]) {
-        const connection = createConnection(addressNodes[source].position, addressNodes[target].position, tx.critical);
-        addressNodes[source].connections.push(connection);
-        addressNodes[target].connections.push(connection);
-      }
-    });
-
-    // Orbital Rings
-    // const createOrbitalRing = (radius, color, opacity) => {
-    //   const ringGeometry = new THREE.TorusGeometry(radius, 0.05, 16, 100);
-    //   const ringMaterial = new THREE.MeshBasicMaterial({ color, transparent: true, opacity });
-    //   const ring = new THREE.Mesh(ringGeometry, ringMaterial);
-    //   ring.rotation.x = Math.PI / 3;
-    //   transactionSystem.add(ring);
-    //   return ring;
-    // };
-    const orbitalRings = [
-      // createOrbitalRing(4.5, 0x84CC16, 0.2),
-      // createOrbitalRing(6, 0x84CC16, 0.1),
-    ];
-
-    // Lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
-    scene.add(ambientLight);
-    const pointLight = new THREE.PointLight(0xffffff, 1);
-    pointLight.position.set(5, 5, 5);
-    scene.add(pointLight);
-
-    // Animation
-    let time = 0;
-    let isSpinning = true;
-
-    const animate = () => {
-      time += 0.01;
-
-      if (isSpinning) {
-        transactionSystem.rotation.y += 0.005;
-      }
-
-      if (hackerNodeRef.current) {
-        hackerNodeRef.current.scale.setScalar(1 + Math.sin(time * 2) * 0.1);
-      }
-      orbitalRings.forEach((ring, i) => {
-        ring.rotation.z += 0.005 * (i + 1);
-        ring.rotation.x = Math.PI / 3 + Math.sin(time * 0.5) * 0.1;
-      });
-      renderer.render(scene, camera);
-      animationFrameId.current = requestAnimationFrame(animate);
-    };
-
-    gsap.from(transactionSystem.scale, { x: 0, y: 0, z: 0, duration: 2, ease: "elastic.out(1, 0.5)" });
-    animate();
-
-    // Mouse Interaction
-    let mouseX = 0, mouseY = 0;
-    let hoveredAddress = null;
-    let selectedAddress = null;
-
-    const onMouseMove = (event) => {
-      const containerRect = container.getBoundingClientRect();
-      if (
-        event.clientX >= containerRect.left &&
-        event.clientX <= containerRect.right &&
-        event.clientY >= containerRect.top &&
-        event.clientY <= containerRect.bottom
-      ) {
-        const relativeX = ((event.clientX - containerRect.left) / containerRect.width) * 2 - 1;
-        const relativeY = -((event.clientY - containerRect.top) / containerRect.height) * 2 + 1;
-        mouseX = relativeX;
-        mouseY = relativeY;
-
-        const raycaster = new THREE.Raycaster();
-        raycaster.params.Points.threshold = 0.1;
-        const mouse = new THREE.Vector2(relativeX, relativeY);
-        raycaster.setFromCamera(mouse, camera);
-
-        const allNodes = [hackerNodeRef.current, ...Object.values(addressNodes).map(n => n.node)];
-        const intersects = raycaster.intersectObjects(allNodes);
-
-        if (intersects.length > 0) {
-          const hoveredNode = intersects[0].object;
-          const address = hoveredNode.userData.address;
-          if (address !== hoveredAddress) {
-            hoveredAddress = address;
-            isSpinning = false;
-
-            const entity = hoveredNode.userData.entity || 'Unknown';
-            const isCritical = hoveredNode.userData.isCritical;
-            const isHacker = hoveredNode.userData.isHacker;
-            tooltipRef.current.innerHTML = `
-              <div style="padding: 10px;">
-                <strong>Address:</strong> ${address}<br>
-                <strong>Type:</strong> ${isHacker ? 'Hacker' : (entity !== 'Unknown' ? entity : (isCritical ? 'Critical' : 'Normal'))}
-              </div>
-            `;
-            tooltipRef.current.style.display = 'block';
-            tooltipRef.current.style.left = `${event.clientX + 10}px`;
-            tooltipRef.current.style.top = `${event.clientY + 10}px`;
-
-            if (!isHacker) {
-              const nodeData = addressNodes[address];
-              gsap.to(nodeData.material, { size: 0.3, opacity: 1, duration: 0.3 });
-            }
-
-            transactionLines.forEach(line => {
-              const tx = line.userData.transaction;
-              if (tx.source === address || tx.target === address) {
-                gsap.to(line.material, { opacity: 1, duration: 0.3 });
-                line.material.color.set(tx.critical ? 0xFF9500 : 0x84CC16);
-              } else {
-                gsap.to(line.material, { opacity: 0.2, duration: 0.3 });
-              }
-            });
-          }
-        } else if (hoveredAddress) {
-          const prevHoveredNode = addressNodes[hoveredAddress] || hackerNodeRef.current;
-          if (prevHoveredNode && !prevHoveredNode.userData.isHacker) {
-            gsap.to(prevHoveredNode.material, { size: 0.2, opacity: 0.8, duration: 0.3 });
-          }
-          hoveredAddress = null;
-          isSpinning = true;
-          tooltipRef.current.style.display = 'none';
-          transactionLines.forEach(line => {
-            gsap.to(line.material, { opacity: line.userData.transaction.critical ? 0.6 : 0.4, duration: 0.3 });
-          });
-        }
-      } else if (hoveredAddress) {
-        const prevHoveredNode = addressNodes[hoveredAddress] || hackerNodeRef.current;
-        if (prevHoveredNode && !prevHoveredNode.userData.isHacker) {
-          gsap.to(prevHoveredNode.material, { size: 0.2, opacity: 0.8, duration: 0.3 });
-        }
-        hoveredAddress = null;
-        isSpinning = true;
-        tooltipRef.current.style.display = 'none';
-      }
-    };
-
-    const onClick = (event) => {
-      const containerRect = container.getBoundingClientRect();
-      if (
-        event.clientX >= containerRect.left &&
-        event.clientX <= containerRect.right &&
-        event.clientY >= containerRect.top &&
-        event.clientY <= containerRect.bottom
-      ) {
-        const relativeX = ((event.clientX - containerRect.left) / containerRect.width) * 2 - 1;
-        const relativeY = -((event.clientY - containerRect.top) / containerRect.height) * 2 + 1;
-        const raycaster = new THREE.Raycaster();
-        raycaster.params.Points.threshold = 0.1;
-        const mouse = new THREE.Vector2(relativeX, relativeY);
-        raycaster.setFromCamera(mouse, camera);
-
-        const allNodes = [hackerNodeRef.current, ...Object.values(addressNodes).map(n => n.node)];
-        const intersects = raycaster.intersectObjects(allNodes);
-
-        if (intersects.length > 0) {
-          const clickedNode = intersects[0].object;
-          const address = clickedNode.userData.address;
-          selectedAddress = address;
-
-          const entity = clickedNode.userData.entity || 'Unknown';
-          const isCritical = clickedNode.userData.isCritical;
-          const isHacker = clickedNode.userData.isHacker;
-          const txs = clickedNode.userData.transactions || [];
-          let transactionsHTML = '';
-          txs.slice(0, 5).forEach(tx => {
-            transactionsHTML += `
-              <div class="transaction ${tx.critical ? 'critical' : ''}">
-                <div>${tx.source.substring(0, 8)}... → ${tx.target.substring(0, 8)}...</div>
-                <div>Amount: ${tx.amount} SOL</div>
-                <div>Date: ${tx.date}</div>
-              </div>
-            `;
-          });
-
-          infoCardRef.current.innerHTML = `
-            <div class="info-card-header ${isHacker ? 'hacker' : (isCritical ? 'critical' : '')}">
-              <h3>${isHacker ? 'Hacker' : (entity !== 'Unknown' ? entity : 'Address')}</h3>
-              <button class="close-btn">×</button>
-            </div>
-            <div class="info-card-content">
-              <div class="address-details">
-                <div><strong>Address:</strong> ${address}</div>
-                <div><strong>Type:</strong> ${isHacker ? 'Hacker' : (entity !== 'Unknown' ? entity : (isCritical ? 'Critical' : 'Normal'))}</div>
-                <div><strong>Transactions:</strong> ${txs.length}</div>
-              </div>
-              <div class="transactions-list">
-                <h4>Recent Transactions</h4>
-                ${transactionsHTML}
-                ${txs.length > 5 ? `<div class="more-tx">+ ${txs.length - 5} more transactions</div>` : ''}
-              </div>
-            </div>
-          `;
-          infoCardRef.current.style.display = 'block';
-
-          const closeBtn = infoCardRef.current.querySelector('.close-btn');
-          closeBtn.addEventListener('click', () => {
-            infoCardRef.current.style.display = 'none';
-            selectedAddress = null;
-            allNodes.forEach(node => {
-              if (!node.userData.isHacker) {
-                gsap.to(node.material, { size: 0.2, opacity: 0.8, duration: 0.3 });
-              }
-            });
-          });
-
-          if (!isHacker) {
-            gsap.to(clickedNode.material, { size: 0.4, opacity: 1, duration: 0.3 });
-          }
-          allNodes.forEach(node => {
-            if (node !== clickedNode && !node.userData.isHacker) {
-              gsap.to(node.material, { size: 0.2, opacity: 0.8, duration: 0.3 });
-            }
-          });
-        } else if (selectedAddress && infoCardRef.current) {
-          const infoCardRect = infoCardRef.current.getBoundingClientRect();
-          if (
-            event.clientX < infoCardRect.left ||
-            event.clientX > infoCardRect.right ||
-            event.clientY < infoCardRect.top ||
-            event.clientY > infoCardRect.bottom
-          ) {
-            infoCardRef.current.style.display = 'none';
-            selectedAddress = null;
-            allNodes.forEach(node => {
-              if (!node.userData.isHacker) {
-                gsap.to(node.material, { size: 0.2, opacity: 0.8, duration: 0.3 });
-              }
-            });
-          }
-        }
-      }
-    };
-
-    const updateRotation = () => {
-      gsap.to(transactionSystem.rotation, {
-        x: mouseY * 0.2,
-        y: mouseX * 0.5,
-        duration: 2,
-        ease: "power2.out",
-      });
-      requestAnimationFrame(updateRotation);
-    };
-
-    document.addEventListener('mousemove', onMouseMove);
-    document.addEventListener('click', onClick);
-    updateRotation();
-
-    // Resize Handling
-    const resizeObserver = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        if (entry.target === container) {
-          const { width, height } = entry.contentRect;
-          if (width > 0 && height > 0) {
-            camera.aspect = width / height;
-            camera.updateProjectionMatrix();
-            renderer.setSize(width, height);
-          }
-        }
-      }
-    });
-    resizeObserver.observe(container);
-
-    // Cleanup
-    return () => {
-      cancelAnimationFrame(animationFrameId.current);
-      document.removeEventListener('mousemove', onMouseMove);
-      document.removeEventListener('click', onClick);
-      resizeObserver.disconnect();
-
-      if (tooltipRef.current) document.body.removeChild(tooltipRef.current);
-      if (infoCardRef.current && containerRef.current) containerRef.current.removeChild(infoCardRef.current);
-      if (rendererRef.current) {
-        if (containerRef.current && rendererRef.current.domElement) {
-          containerRef.current.removeChild(rendererRef.current.domElement);
-        }
-        rendererRef.current.dispose();
-      }
-      if (sceneRef.current) {
-        sceneRef.current.traverse(object => {
-          if (object.geometry) object.geometry.dispose();
-          if (object.material) {
-            if (Array.isArray(object.material)) object.material.forEach(mat => mat.dispose());
-            else object.material.dispose();
-          }
-        });
-        sceneRef.current.clear();
-      }
-    };
-  }, [transactions, dateFilter, amountFilter]);
+  // Create the filtered graph to pass to the Graph component
+  const filteredGraph = {
+    nodes: filteredNodeList,
+    edges: filteredEdgeList,
+  };
 
   return (
-    <div className={`solana-transaction-flow ${className}`} style={{ width: '100%', height: '100%', position: 'relative' }}>
+    <div style={{ width: '100%', height: '750px', position: 'relative', backgroundColor: '#1A202C' }}>
+      {/* Filter Inputs */}
       <div className="filters">
         <div className="filter-item">
-          <label className="filter-label">Date Filter</label>
+          <label className="filter-label">Filter by Address/Label</label>
           <input
-            type="date"
-            value={dateFilter}
-            onChange={(e) => setDateFilter(e.target.value)}
+            type="text"
+            value={addressFilter}
+            onChange={(e) => setAddressFilter(e.target.value)}
+            placeholder="Search address or label..."
             className="filter-input"
           />
         </div>
         <div className="filter-item">
-          <label className="filter-label">Min Amount</label>
+          <label className="filter-label">Min Transaction Amount (USD)</label>
           <input
             type="number"
             min="0"
@@ -552,162 +150,258 @@ const TransactionFlow = ({
           />
         </div>
       </div>
-      <div ref={containerRef} className="transaction-canvas" />
+
+      <Canvas camera={{ position: [0, 0, 15], fov: 75 }}>
+        <ambientLight intensity={0.5} />
+        <pointLight position={[5, 5, 5]} intensity={1} />
+        <Graph tx_graph={filteredGraph} setSelectedNode={setSelectedNode} hackerAddress={hackerAddress} />
+        <OrbitControls enablePan={false} minDistance={5} maxDistance={50} />
+      </Canvas>
+
+      {selectedNode && (
+        <div className="info-card">
+          <div
+            className="info-card-header"
+            style={{
+              background: selectedNode.id === hackerAddress ? '#E11D48' : '#3B82F6', // Red for hacker, blue for others
+            }}
+          >
+            <h3>
+              {selectedNode.label !== 'Unknown' ? selectedNode.label : 'Address'}
+            </h3>
+            <button onClick={() => setSelectedNode(null)}>×</button>
+          </div>
+          <div className="info-card-content">
+            <p><strong>Address:</strong> {selectedNode.id}</p>
+            <p><strong>Label:</strong> {selectedNode.label}</p>
+            <p><strong>USD Received:</strong> ${selectedNode.amount_usd_received.toFixed(2)}</p>
+            <p><strong>USD Sent:</strong> ${selectedNode.amount_usd_sent.toFixed(2)}</p>
+          </div>
+        </div>
+      )}
+
       <style jsx>{`
-        .solana-transaction-flow {
-          background-color: rgba(26, 32, 44, 0.8);
-          border-radius: 8px;
-          display: flex;
-          flex-direction: column;
-        }
-        .transaction-canvas {
-          position: relative;
-          flex: 1;
-        }
-        .transaction-canvas canvas {
-          position: absolute;
-          top: 0;
-          left: 0;
-          width: 100%;
-          min-height: 750px;
-        }
         .filters {
           display: flex;
-          gap: 1rem; /* Matches the gap used in dashboard-right */
+          gap: 1rem;
           padding: 10px;
-          margin-bottom: 1rem; /* Matches the mb-4 spacing */
+          background: rgba(26, 32, 44, 0.8);
+          border-bottom: 1px solid #2D3748;
         }
         .filter-item {
           flex: 1;
         }
         .filter-label {
           display: block;
-          font-size: 0.875rem; /* Matches text-sm */
-          font-weight: 500; /* Matches font-medium */
-          color: var(--text-secondary); /* Matches dashboard text-secondary */
-          margin-bottom: 0.25rem; /* Matches mb-1 */
+          font-size: 0.875rem;
+          font-weight: 500;
+          color: #A1A1AA;
+          margin-bottom: 0.25rem;
         }
         .filter-input {
           width: 100%;
-          padding: 0.5rem; /* Matches p-2 */
-          border-radius: 6px; /* Matches rounded-md and other dashboard elements */
-          background-color: var(--card-bg); /* Matches dashboard card background */
-          color: var(--text-primary); /* Matches dashboard text-primary */
-          border: 1px solid var(--border); /* Matches dashboard border */
-          font-size: 0.875rem; /* Matches text-sm */
-          transition: border-color 0.2s ease, box-shadow 0.2s ease;
+          padding: 0.5rem;
+          border-radius: 6px;
+          background: #2D3748;
+          color: #E2E8F0;
+          border: 1px solid #4A5568;
+          font-size: 0.875rem;
+          transition: border-color 0.2s ease;
         }
-        .filter-input:hover {
-          border-color: #4b5563; /* Slightly lighter than --border for hover effect */
-        }
+        .filter-input:hover,
         .filter-input:focus {
+          border-color: #3B82F6;
           outline: none;
-          border-color: var(--accent-blue); /* Matches dashboard accent-blue */
-          box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5); /* Matches focus:ring-2 focus:ring-blue-500 */
         }
-        /* Style the date picker icon to match the theme */
-        .filter-input[type="date"]::-webkit-calendar-picker-indicator {
-          filter: invert(1); /* Makes the icon white to match text-primary */
-        }
-        .filter-input[type="number"]::-webkit-inner-spin-button,
-        .filter-input[type="number"]::-webkit-outer-spin-button {
-          opacity: 1;
-          filter: invert(1); /* Makes the spin buttons white to match text-primary */
-        }
-      `}</style>
-      <style jsx global>{`
-        .address-tooltip {
-          position: absolute;
-          background-color: rgba(26, 32, 44, 0.9);
-          color: white;
-          padding: 5px;
-          border-radius: 4px;
-          font-size: 12px;
-          z-index: 10000;
-          pointer-events: none;
-          border: 1px solid #84cc16;
-          max-width: 250px;
-          box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
-        }
-        .address-info-card {
+        .info-card {
           position: absolute;
           top: 20px;
           right: 20px;
-          width: 750px;
-          background-color: rgba(26, 32, 44, 0.95);
+          width: 300px;
+          background: rgba(26, 32, 44, 0.95);
           color: white;
           border-radius: 8px;
-          overflow: hidden;
-          z-index: 9999;
           box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+          z-index: 9999;
         }
         .info-card-header {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          padding: 10px 15px;
-          background-color: #3B82F6;
-          color: white;
-        }
-        .info-card-header.hacker {
-          background-color: #E11D48;
-        }
-        .info-card-header.critical {
-          background-color: #FF9500;
+          padding: 10px;
         }
         .info-card-header h3 {
           margin: 0;
           font-size: 16px;
-          font-weight: 600;
         }
-        .close-btn {
+        .info-card-header button {
           background: none;
           border: none;
           color: white;
           font-size: 20px;
           cursor: pointer;
-          padding: 0;
-          width: 24px;
-          height: 24px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          border-radius: 50%;
-        }
-        .close-btn:hover {
-          background-color: rgba(255, 255, 255, 0.2);
         }
         .info-card-content {
           padding: 15px;
-        }
-        .address-details {
-          margin-bottom: 15px;
-          line-height: 1.6;
-        }
-        .transactions-list h4 {
-          margin: 0 0 10px 0;
           font-size: 14px;
-          color: #A1A1AA;
-        }
-        .transaction {
-          padding: 8px;
-          border-radius: 4px;
-          background-color: rgba(255, 255, 255, 0.05);
-          margin-bottom: 8px;
-          font-size: 12px;
-          line-height: 1.4;
-        }
-        .transaction.critical {
-          border-left: 3px solid #FF9500;
-        }
-        .more-tx {
-          text-align: center;
-          color: #A1A1AA;
-          font-size: 12px;
-          padding: 5px;
         }
       `}</style>
     </div>
+  );
+};
+
+// Graph Component to Render Nodes, Edges, and Labels
+const Graph = ({ tx_graph, setSelectedNode, hackerAddress }) => {
+  const groupRef = useRef();
+
+  // Ensure nodes and edges are always defined, even if empty
+  const nodes = useMemo(() => (tx_graph.nodes ? Object.values(tx_graph.nodes) : []), [tx_graph.nodes]);
+  const edges = useMemo(() => tx_graph.edges || [], [tx_graph.edges]);
+
+  // Calculate address volume for visualization
+  const addressVolume = useMemo(() => {
+    const volumeMap = new Map();
+    edges.forEach(edge => {
+      const value = Number(edge.value) || 0;
+      volumeMap.set(edge.from, (volumeMap.get(edge.from) || 0) + value);
+      volumeMap.set(edge.to, (volumeMap.get(edge.to) || 0) + value);
+    });
+    return volumeMap;
+  }, [edges]);
+
+  const maxVolume = useMemo(() => {
+    let max = 0;
+    addressVolume.forEach(volume => {
+      if (volume > max) max = volume;
+    });
+    return max;
+  }, [addressVolume]);
+
+  // Include all nodes except the hacker address for positioning on the sphere
+  const addresses = useMemo(() => {
+    const addressSet = new Set(Object.keys(tx_graph.nodes));
+    if (hackerAddress) addressSet.delete(hackerAddress);
+    return [...addressSet];
+  }, [tx_graph.nodes, hackerAddress]);
+
+  // Position nodes on a sphere
+  const nodePositions = useMemo(() => {
+    const radius = 6;
+    const posArray = [];
+    for (let i = 0; i < addresses.length; i++) {
+      const phi = Math.acos(-1 + (2 * i) / Math.max(addresses.length, 1));
+      const theta = Math.sqrt(Math.max(addresses.length, 1) * Math.PI) * phi;
+      posArray.push(
+        new THREE.Vector3(
+          radius * Math.sin(phi) * Math.cos(theta),
+          radius * Math.sin(phi) * Math.sin(theta),
+          radius * Math.cos(phi)
+        )
+      );
+    };
+    return posArray;
+  }, [addresses]);
+
+  // Animate the central node
+  useFrame(() => {
+    if (groupRef.current && groupRef.current.children.length > 0) {
+      const time = Date.now() * 0.002;
+      if (groupRef.current.children[0]?.scale) {
+        groupRef.current.children[0].scale.setScalar(1 + Math.sin(time) * 0.1);
+      }
+    }
+  });
+
+  return (
+    <group ref={groupRef}>
+      {/* Hacker Node */}
+      {hackerAddress && tx_graph.nodes[hackerAddress] && (
+        <>
+          <Sphere
+            args={[0.8, 32, 32]}
+            position={[0, 0, 0]}
+            onClick={() => {
+              const nodeData = tx_graph.nodes[hackerAddress];
+              // If label is "Unknown Address", change it to "Hacker"
+              const updatedLabel =
+                nodeData.label === 'Unknown Address' ? 'Hacker' : nodeData.label;
+              setSelectedNode({ ...nodeData, id: hackerAddress, label: updatedLabel });
+            }}
+          >
+            <meshPhongMaterial color="#E11D48" emissive="#E11D48" emissiveIntensity={0.5} shininess={100} />
+          </Sphere>
+          {/* Hacker Label */}
+          <sprite position={[0, 1.2, 0]} scale={[1.8, 0.9, 1]}>
+            <spriteMaterial attach="material">
+              <canvasTexture
+                attach="map"
+                image={createSpriteTexture(
+                  tx_graph.nodes[hackerAddress].label === 'Unknown Address'
+                    ? 'Hacker'
+                    : tx_graph.nodes[hackerAddress].label
+                )}
+              />
+            </spriteMaterial>
+          </sprite>
+        </>
+      )}
+
+      {/* Address Nodes and Labels */}
+      {addresses.map((address, index) => {
+        const nodeData = tx_graph.nodes[address];
+        const position = nodePositions[index];
+        if (!nodeData || !position) return null;
+
+        const volume = addressVolume.get(address) || 0;
+        const isHighVolume = maxVolume > 0 && volume > maxVolume * 0.5;
+        const labelText = nodeData.label === 'Unknown Address' ? address : nodeData.label;
+        const labelPosition = position.clone().multiplyScalar(1.2); // Offset the label slightly
+
+        return (
+          <group key={address}>
+            <Sphere
+              args={[0.1, 16, 16]}
+              position={position}
+              onClick={() => setSelectedNode({ ...nodeData, id: address })}
+            >
+              <meshBasicMaterial color={isHighVolume ? '#FF9500' : '#84CC16'} />
+            </Sphere>
+            <sprite position={labelPosition} scale={[1.5, 0.75, 1]}>
+              <spriteMaterial attach="material">
+                <canvasTexture attach="map" image={createSpriteTexture(labelText)} />
+              </spriteMaterial>
+            </sprite>
+          </group>
+        );
+      })}
+
+      {/* Edges */}
+      {edges.map((edge, index) => {
+        const fromIndex = edge.from === hackerAddress ? -1 : addresses.indexOf(edge.from);
+        const toIndex = edge.to === hackerAddress ? -1 : addresses.indexOf(edge.to);
+
+        const fromPos = fromIndex === -1 ? new THREE.Vector3(0, 0, 0) : nodePositions[fromIndex];
+        const toPos = toIndex === -1 ? new THREE.Vector3(0, 0, 0) : nodePositions[toIndex];
+        if (!fromPos || !toPos) return null;
+
+        const points = [fromPos, toPos];
+        const value = Number(edge.value) || 0;
+        const isHighValue = maxVolume > 0 && value > maxVolume * 0.5;
+        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+
+        return (
+          <line key={`edge-${index}`}>
+            <bufferGeometry attach="geometry" {...geometry} />
+            <lineBasicMaterial
+              color={isHighValue ? '#FF9500' : '#84CC16'}
+              transparent
+              opacity={isHighValue ? 0.6 : 0.4}
+              linewidth={isHighValue ? 2 : 1}
+            />
+          </line>
+        );
+      })}
+    </group>
   );
 };
 
