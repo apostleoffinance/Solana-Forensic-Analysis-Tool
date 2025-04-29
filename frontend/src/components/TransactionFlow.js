@@ -359,7 +359,7 @@ const Graph = ({ tx_graph, setSelectedNode, hackerAddress }) => {
               position={position}
               onClick={() => setSelectedNode({ ...nodeData, id: address })}
             >
-              <meshBasicMaterial color={isHighVolume ? '#FF9500' : '#84CC16'} />
+              <meshBasicMaterial color={isHighVolume ? '#FF9500' : '#3b82f6'} />
             </Sphere>
             <sprite position={labelPosition} scale={[1.5, 0.75, 1]}>
               <spriteMaterial attach="material">
@@ -388,7 +388,7 @@ const Graph = ({ tx_graph, setSelectedNode, hackerAddress }) => {
           <line key={`edge-${index}`}>
             <bufferGeometry attach="geometry" {...geometry} />
             <lineBasicMaterial
-              color={isHighValue ? '#FF9500' : '#84CC16'}
+              color={isHighValue ? '#FF9500' : '#3b82f6'}
               transparent
               opacity={isHighValue ? 0.6 : 0.4}
               linewidth={isHighValue ? 2 : 1}

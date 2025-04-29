@@ -161,13 +161,13 @@ export default function TransactionClusters({ tx_graph, wallet_analysis }) {
           font-size: 1.1rem;
           font-weight: 700;
           margin-bottom: 0.75rem;
-          color: var(--accent-red);
+          color: var(--accent-blue);
         }
         .cluster-selector {
           background-color: var(--card-bg-dark, #1a202c);
           padding: 1.5rem;
           border-radius: 8px;
-          border: 2px solid var(--accent-red);
+          border: 2px solid var(--accent-blue);
           margin-bottom: 1.5rem;
         }
         .cluster-options {
@@ -176,7 +176,7 @@ export default function TransactionClusters({ tx_graph, wallet_analysis }) {
           gap: 1rem;
         }
         .cluster-btn {
-          background-color: var(--accent-red);
+          background-color: var(--accent-blue);
           border: none;
           padding: 0.5rem 1rem;
           border-radius: 0;
@@ -197,7 +197,7 @@ export default function TransactionClusters({ tx_graph, wallet_analysis }) {
           background-color: #b91c3a;
         }
         .cluster-btn.unusual {
-          background-color: #ff4d4f;
+          background-color: var(--accent-blue);
         }
         .unusual-flag {
           font-size: 1rem;
@@ -211,7 +211,7 @@ export default function TransactionClusters({ tx_graph, wallet_analysis }) {
           background-color: var(--card-bg-dark, #1a202c);
           padding: 1.5rem;
           border-radius: 8px;
-          border: 2px solid var(--accent-red);
+          border: 2px solid var(--accent-blue);
         }
         .overview-card {
           font-size: 0.9rem;
@@ -220,14 +220,14 @@ export default function TransactionClusters({ tx_graph, wallet_analysis }) {
           margin-bottom: 0.75rem;
         }
         .unusual-text {
-          color: #ff4d4f;
+          color: var(--accent-blue);
           font-weight: 600;
         }
         .transaction-details {
           background-color: var(--card-bg-dark, #1a202c);
           padding: 1.5rem;
           border-radius: 8px;
-          border: 2px solid var(--accent-red);
+          border: 2px solid var(--accent-blue);
         }
         .transactions-table {
           display: flex;
@@ -239,7 +239,7 @@ export default function TransactionClusters({ tx_graph, wallet_analysis }) {
           grid-template-columns: 1fr 2fr 2fr 1fr 1fr 1fr 2fr;
           gap: 0.75rem;
           padding: 0.75rem 0;
-          border-bottom: 1px solid rgba(225, 29, 72, 0.3);
+          border-bottom: 1px solid rgba(59, 130, 246, 0.3);
           font-size: 0.9rem;
         }
         @media (max-width: 768px) {
@@ -255,15 +255,15 @@ export default function TransactionClusters({ tx_graph, wallet_analysis }) {
         }
         .table-header {
           font-weight: 700;
-          color: var(--accent-red);
-          background-color: rgba(225, 29, 72, 0.1);
+          color: var(--accent-blue);
+          background-color: rgba(59, 130, 246, 0.1);
         }
         .table-row:last-child {
           border-bottom: none;
         }
         .table-row.unusual-row {
-          color: #ff4d4f;
-          border-left: 4px solid #ff4d4f;
+          color: var(--accent-blue);
+          border-left: 4px solid var(--accent-blue);
         }
       `}</style>
       <style jsx global>{`

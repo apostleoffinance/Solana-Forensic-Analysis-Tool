@@ -9,6 +9,7 @@ cytoscape.use(popper);
 export default function EntityLabels({ tx_graph, wallet_analysis }) {
   const [selectedEntity, setSelectedEntity] = useState(null);
   const [viewMode, setViewMode] = useState('table'); // 'table' or 'graph'
+  const [isModalOpen, setIsModalOpen] = useState(false); // New state for modal
   const containerRef = useRef();
 
   // Memoize entities to prevent recreation on every render
@@ -78,8 +79,7 @@ export default function EntityLabels({ tx_graph, wallet_analysis }) {
       const newSelectedEntity = targetEntity || entities[0];
       setSelectedEntity(newSelectedEntity);
     }
-  }, [entities, wallet_analysis]); // Remove selectedEntity from dependencies
-
+  }, [entities, wallet_analysis]);
 
   // Calculate summary statistics
   const summary = {
@@ -89,7 +89,7 @@ export default function EntityLabels({ tx_graph, wallet_analysis }) {
     unknown: entities.filter((e) => e.label.toLowerCase().includes('unknown')).length,
   };
 
-  // Cytoscape.js setup
+  // Cytoscape.js setup (unchanged)
   useEffect(() => {
     if (viewMode !== 'graph' || !containerRef.current) return;
 
@@ -151,7 +151,7 @@ export default function EntityLabels({ tx_graph, wallet_analysis }) {
             'target-arrow-color': (ele) => (ele.data('unusual') ? 'var(--accent-red)' : 'var(--text-secondary)'),
             'target-arrow-shape': 'triangle',
             'curve-style': 'bezier',
-            'label': 'data(label)',
+ impunity: 'data(label)',
             'font-size': '10px',
             'text-rotation': 'autorotate',
             'text-outline-width': 1,
@@ -219,6 +219,19 @@ export default function EntityLabels({ tx_graph, wallet_analysis }) {
       cy.destroy();
     };
   }, [viewMode, entities, tx_graph, wallet_analysis]);
+
+  // Handle opening the modal
+  const openModal = (entity) => {
+    setSelectedEntity({ ...entity, timestamp: Date.now() });
+    setIsModalOpen(true);
+  };
+
+  // Handle closing the modal
+  const closeModal = () => {
+    setIsModalOpen(false);
+    // Optionally clear selectedEntity if you don't want it to persist
+    // setSelectedEntity(null);
+  };
 
   return (
     <div className="entity-labels">
@@ -297,10 +310,7 @@ export default function EntityLabels({ tx_graph, wallet_analysis }) {
                   <span>
                     <button
                       className="action-btn"
-                      onClick={() => {
-                        const newEntity = { ...entity, timestamp: Date.now() };
-                        setSelectedEntity(newEntity);
-                      }}
+                      onClick={() => openModal(entity)}
                     >
                       View Patterns
                     </button>
@@ -309,10 +319,17 @@ export default function EntityLabels({ tx_graph, wallet_analysis }) {
               ))}
             </div>
           </div>
+        </>
+      )}
 
-          {/* Deposit/Withdrawal Patterns */}
-          {selectedEntity && (
-            <div className="patterns-section">
+      {/* Modal for Patterns */}
+      {isModalOpen && selectedEntity && (
+        <div className="modal-overlay">
+          <div className="modal">
+            <button className="modal-close" onClick={closeModal}>
+              &times;
+            </button>
+            <div className="modal-content">
               <h3>Deposit/Withdrawal Patterns for {selectedEntity.wallet}</h3>
               {selectedEntity.patterns.length > 0 ? (
                 <>
@@ -369,8 +386,8 @@ export default function EntityLabels({ tx_graph, wallet_analysis }) {
                 <p>No deposit/withdrawal patterns available for this wallet.</p>
               )}
             </div>
-          )}
-        </>
+          </div>
+        </div>
       )}
 
       <style jsx>{`
@@ -495,11 +512,46 @@ export default function EntityLabels({ tx_graph, wallet_analysis }) {
         .action-btn:hover {
           background-color: #2563eb;
         }
-        .patterns-section {
+        /* Modal Styles */
+        .modal-overlay {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background-color: rgba(0, 0, 0, 0.5);
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          z-index: 1000;
+        }
+        .modal {
           background-color: var(--card-bg);
-          padding: 1rem;
           border-radius: 6px;
           border: 1px solid var(--border);
+          max-width: 800px;
+          width: 90%;
+          max-height: 80vh;
+          overflow-y: auto;
+          position: relative;
+          padding: 1.5rem;
+        }
+        .modal-close {
+          position: absolute;
+          top: 0.5rem;
+          right: 0.5rem;
+          background: none;
+          border: none;
+          font-size: 1.5rem;
+          color: var(--text-primary);
+          cursor: pointer;
+          transition: color 0.2s ease;
+        }
+        .modal-close:hover {
+          color: var(--accent-red);
+        }
+        .modal-content {
+          padding: 0.5rem;
         }
         .patterns-table {
           display: flex;
@@ -570,7 +622,7 @@ export default function EntityLabels({ tx_graph, wallet_analysis }) {
   );
 }
 
-// Helper function to convert entities into Cytoscape elements
+// Helper function to convert entities into Cytoscape elements (unchanged)
 function generateElements(entities, edges, wallet_analysis) {
   const elements = [];
 
