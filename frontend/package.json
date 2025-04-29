@@ -2,14 +2,11 @@
   "name": "frontend",
   "version": "0.1.0",
   "private": true,
-  "homepage": "https://apostleoffinance.github.io/Solana-Forensic-Analysis-Tool",
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
-    "postbuild": "touch out/.nojekyll",
-    "deploy": "yarn build && gh-pages -d out --dotfiles"
+    "lint": "next lint"
   },
   "dependencies": {
     "@popperjs/core": "^2.11.8",
