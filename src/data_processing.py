@@ -356,6 +356,38 @@ def jsonify_safe(obj):
         return obj.isoformat()
     else:
         return obj
+    
+def merge_datasets(tx_level_data_1, wallet_analysis_df):
+    # Drop any previous 'sender_entity' and 'receiver_entity' columns if they exist
+    tx_level_data=tx_level_data_1.copy()
+    tx_level_data = tx_level_data.drop(columns=['sender_entity', 'receiver_entity'], errors='ignore')
+
+    tx_level_data = tx_level_data.merge(
+        wallet_analysis_df[['wallet_address', 'entity_label']].rename(columns={
+            'wallet_address': 'sender',
+            'entity_label': 'sender_entity'
+        }),
+        how='left',
+        on='sender'
+    )
+
+    # Clean merge for receiver
+    tx_level_data = tx_level_data.merge(
+        wallet_analysis_df[['wallet_address', 'entity_label']].rename(columns={
+            'wallet_address': 'receiver',
+            'entity_label': 'receiver_entity'
+        }),
+        how='left',
+        on='receiver'
+    )
+
+    tx_level_data['entity_label'] = tx_level_data['sender_entity'].fillna(tx_level_data['receiver_entity'])
+
+    tx_level_data.drop(columns=['sender_entity', 'receiver_entity'], inplace=True)
+
+    tx_level_data = tx_level_data[[col for col in tx_level_data.columns if not col.endswith('_x') and not col.endswith('_y')]]
+
+    return tx_level_data
 
 
 

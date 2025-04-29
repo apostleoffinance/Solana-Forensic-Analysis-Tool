@@ -1,7 +1,8 @@
 from flask import Flask, render_template, request, jsonify
 from src.clustering import create_tx_graph
 from src.data_fetching import get_balance_data
-from src.data_processing import get_comprehensive_tx_history, construct_tx_dataset, get_summary_stats, jsonify_safe 
+from src.data_processing import (get_comprehensive_tx_history, construct_tx_dataset, 
+                                 get_summary_stats, jsonify_safe, merge_datasets)
 from src.entity_labeling import add_entity_labels
 from src.wallet_analysis import WalletAnalysis
 import os
@@ -55,9 +56,12 @@ def create_app():
 
         print(f'tx_level_data after construct dataset: {tx_level_data}')
 
-        tx_level_data_complete = add_entity_labels(tx_level_data, address)
+        tx_level_data_complete, wallet_stats = add_entity_labels(tx_level_data, address) # turn to dict
 
         print(f'tx_level_data_complete after entity labeling: {tx_level_data_complete}')
+        print(f'wallet_stats: {wallet_stats}')
+
+        tx_level_data_complete = merge_datasets(tx_level_data_complete, wallet_stats)
 
         tx_graph = create_tx_graph(tx_level_data_complete)
 
