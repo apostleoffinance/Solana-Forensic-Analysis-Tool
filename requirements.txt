@@ -5,7 +5,6 @@ heliuspy
 sqlalchemy 
 networkx
 matplotlib
-scikit-learn
 xgboost
 pyod   # For anomaly detection
 statsmodels
@@ -16,6 +15,5 @@ certifi
 charset-normalizer
 idna
 urllib3
-ipykernel # for notebooks
 dotenv
 flask

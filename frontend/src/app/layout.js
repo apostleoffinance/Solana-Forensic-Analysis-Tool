@@ -1,6 +1,7 @@
 // app/layout.js
 import { Geist, Geist_Mono } from "next/font/google";
 import Link from "next/link";
+import { DataProvider } from "./DataContext";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -34,7 +35,9 @@ export default function RootLayout({ children }) {
           </nav>
         </header>
         <main className="main">
-          {children}
+          <DataProvider>
+            {children}
+          </DataProvider>
         </main>
       </body>
     </html>

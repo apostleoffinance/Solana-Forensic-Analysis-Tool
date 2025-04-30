@@ -1,7 +1,0 @@
-# Local
-
-curl -H "Content-Type: application/json" -X POST -d "{\"address\": \"AGPZnBZUxmhAtcp8XjT4n8bCia9dEYhhm16M2sfFvmTU\"}" http://127.0.0.1:5025/api/analyze_address
-
-# Pythonanywhere
-
-curl -H "Content-Type: application/json" -X POST -d "{\"address\": \"AGPZnBZUxmhAtcp8XjT4n8bCia9dEYhhm16M2sfFvmTU\"}" https://bhami628.pythonanywhere.com/api/analyze_address

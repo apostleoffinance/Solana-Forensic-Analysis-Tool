@@ -1,207 +1,159 @@
 'use client';
-import Image from 'next/image';
 
-export default function WalletAnalysis({ wallets }) {
-  // For simplicity, we'll display the analysis for the first wallet in the list
-  const wallet = Object.values(wallets)[0];
+export default function WalletAnalysis( { wallet_analysis, tx_graph }) {
+  const { activity_patterns, funding_sources, transaction_history } = wallet_analysis;
+  const { nodes, edges } = tx_graph;
 
-  const {
-    fullAddress,
-    network,
-    status,
-    lastChecked,
-    certifiedBy,
-    predictedTrust,
-    experienceLevel,
-    riskWillingness,
-    amlAnalysis,
-    intents,
-    transactionCategories,
-    protocols,
-    recommendations,
-  } = wallet;
+  // Extract key data
+  const walletAddress = activity_patterns.wallet_address;
+  const network = 'SOL Network';
+  const activePeriodDays = activity_patterns.active_period_days;
+  const avgTxPerDay = activity_patterns.avg_tx_per_day.toFixed(2);
+  const senderToReceiverRatio = activity_patterns.sender_to_receiver_ratio.toFixed(2);
+  const solNetFlow = activity_patterns.sol_net_flow.toFixed(4);
+
+  // Transaction history
+  const firstTransaction = transaction_history.first_transaction;
+  const lastTransaction = transaction_history.last_transaction;
+  const numTransactions = transaction_history.num_transactions;
+  const totalSolReceived = transaction_history.total_sol_volume_received.toFixed(4);
+  const totalSolSent = transaction_history.total_sol_volume_sent.toFixed(4);
+
+  // Funding sources (taking first for simplicity, similar to original)
+  const fundingSource = funding_sources[0];
+  const uniqueSenders = fundingSource['Unique Senders'];
+  const uniqueReceivers = fundingSource['Unique Receivers'];
+  const tokensReceived = fundingSource['Token Received (Total)'].token_amount;
+  const tokensSent = fundingSource['Token Sent (Total)'].token_amount;
+
+  // Protocols (derived from node labels)
+  const protocols = Object.values(nodes)
+    .filter(node => node.label !== 'Unknown Address')
+    .map(node => ({ name: node.label }));
 
   return (
-    <div className="wallet-analysis">
+    <div className="wallet-graph-analysis">
       <h2>Wallet Analysis</h2>
 
       {/* Wallet Info */}
       <div className="wallet-info">
         <div className="wallet-address">
-          <span className="network-icon">{network === 'ETH Network' && '🅴'}</span>
-          <span>{fullAddress}</span>
-        </div>
-        <div className="wallet-meta">
-          <span className="network">{network}</span>
-          <div className="status-tags">
-            {status.map((tag, index) => (
-              <span key={index} className="status-tag">
-                {tag}
-              </span>
-            ))}
-          </div>
-        </div>
-        <div className="wallet-actions">
-          <span className="last-checked">Last checked {lastChecked}</span>
-          <span className="certified">
-            Certified by {certifiedBy} 🛡️
-          </span>
+          <span className="network-icon">◎</span>
+          <span>{walletAddress}</span>
         </div>
       </div>
 
-      {/* Metrics */}
-      <div className="wallet-metrics">
+      {/* Activity Metrics */}
+      <div className="activity-metrics">
         <div className="metric-card">
-          <h3>Predicted Trust</h3>
-          <p>{predictedTrust}% / 100%</p>
-          <div className="progress-bar">
-            <div
-              className="progress-fill"
-              style={{ width: `${predictedTrust}%` }}
-            ></div>
-          </div>
-          <span className="metric-note">AI based trust probability</span>
+          <h3>Active Period</h3>
+          <p>{activePeriodDays} days</p>
+          <span className="metric-note">Duration of wallet activity</span>
         </div>
         <div className="metric-card">
-          <h3>Experience Level</h3>
-          <p>{experienceLevel} / 10</p>
-          <div className="progress-bar">
-            <div
-              className="progress-fill"
-              style={{ width: `${(experienceLevel / 10) * 100}%` }}
-            ></div>
-          </div>
+          <h3>Avg. Tx/Day</h3>
+          <p>{avgTxPerDay}</p>
+          <span className="metric-note">Average transactions per day</span>
         </div>
         <div className="metric-card">
-          <h3>Risk Willingness</h3>
-          <p>{riskWillingness} / 10</p>
-          <div className="progress-bar">
-            <div
-              className="progress-fill"
-              style={{ width: `${(riskWillingness / 10) * 100}%` }}
-            ></div>
-          </div>
-          <span className="metric-note">Willingness to take risks</span>
+          <h3>Sender/Receiver Ratio</h3>
+          <p>{senderToReceiverRatio}</p>
+          <span className="metric-note">Ratio of sending to receiving txs</span>
+        </div>
+        <div className="metric-card">
+          <h3>SOL Net Flow</h3>
+          <p>{solNetFlow} SOL</p>
+          <span className="metric-note">Net SOL flow (in - out)</span>
         </div>
       </div>
 
-      {/* AML Analysis */}
-      <div className="aml-analysis">
-        <h3>AML Analysis</h3>
-        <div className="aml-table">
-          <div className="aml-column">
-            <div className="aml-header">AREA</div>
-            <div className="aml-row">Cybercrime</div>
-            <div className="aml-row">Money Laundering</div>
-            <div className="aml-row">Number of Malicious Contracts</div>
-            <div className="aml-row">Financial Crime</div>
-            <div className="aml-row">Dark Web Transactions</div>
-            <div className="aml-row">Phishing</div>
-            <div className="aml-row">Fake KYC</div>
+      {/* Transaction History */}
+      <div className="transaction-history">
+        <h3>Transaction History</h3>
+        <div className="history-table">
+          <div className="history-column">
+            <div className="history-header">METRIC</div>
+            <div className="history-row">First Transaction</div>
+            <div className="history-row">Last Transaction</div>
+            <div className="history-row">Total Transactions</div>
+            <div className="history-row">Total SOL Received</div>
+            <div className="history-row">Total SOL Sent</div>
           </div>
-          <div className="aml-column">
-            <div className="aml-header">INVOLVED</div>
-            <div className="aml-row">{amlAnalysis.cybercrime ? 'Yes' : 'No'}</div>
-            <div className="aml-row">{amlAnalysis.moneyLaundering ? 'Yes' : 'No'}</div>
-            <div className="aml-row">{amlAnalysis.maliciousContracts}</div>
-            <div className="aml-row">{amlAnalysis.financialCrime ? 'Yes' : 'No'}</div>
-            <div className="aml-row">{amlAnalysis.darkWebTransactions ? 'Yes' : 'No'}</div>
-            <div className="aml-row">{amlAnalysis.phishing ? 'Yes' : 'No'}</div>
-            <div className="aml-row">{amlAnalysis.fakeKYC ? 'Yes' : 'No'}</div>
-          </div>
-          <div className="aml-column">
-            <div className="aml-header">AREA</div>
-            <div className="aml-row">Stealing Attack</div>
-            <div className="aml-row">Blackmail</div>
-            <div className="aml-row">CryptoJacking</div>
-            <div className="aml-row">Coin Mixer Address</div>
-            <div className="aml-row">Fake Token</div>
-            <div className="aml-row">Scam Token</div>
-          </div>
-          <div className="aml-column">
-            <div className="aml-header">INVOLVED</div>
-            <div className="aml-row">{amlAnalysis.stealingAttack ? 'Yes' : 'No'}</div>
-            <div className="aml-row">{amlAnalysis.blackmail ? 'Yes' : 'No'}</div>
-            <div className="aml-row">{amlAnalysis.cryptoJacking ? 'Yes' : 'No'}</div>
-            <div className="aml-row">{amlAnalysis.coinMixerAddress ? 'Yes' : 'No'}</div>
-            <div className="aml-row">{amlAnalysis.fakeToken ? 'Yes' : 'No'}</div>
-            <div className="aml-row">{amlAnalysis.scamToken ? 'Yes' : 'No'}</div>
+          <div className="history-column">
+            <div className="history-header">VALUE</div>
+            <div className="history-row">{firstTransaction}</div>
+            <div className="history-row">{lastTransaction}</div>
+            <div className="history-row">{numTransactions}</div>
+            <div className="history-row">{totalSolReceived} SOL</div>
+            <div className="history-row">{totalSolSent} SOL</div>
           </div>
         </div>
       </div>
 
-      {/* Intents and Recommendations */}
-      <div className="intents-recommendations">
-        <div className="intents">
-          <h3>Intents</h3>
-          <div className="intents-table">
-            {intents.map((intent, index) => (
-              <div key={index} className="intent-row">
-                <span
-                  className={`intent-level intent-level-${intent.level.toLowerCase()}`}
-                >
-                  {intent.level}
-                </span>
-                <span className="intent-name">{intent.name}</span>
+      {/* Funding Sources */}
+      <div className="funding-sources">
+        <h3>Funding Sources</h3>
+        <div className="funding-table">
+          <div className="funding-column">
+            <div className="funding-header">METRIC</div>
+            <div className="funding-row">Entity Label</div>
+            <div className="funding-row">Unique Senders</div>
+            <div className="funding-row">Unique Receivers</div>
+            <div className="funding-row">SOL Received</div>
+            <div className="funding-row">SOL Sent</div>
+          </div>
+          <div className="funding-column">
+            <div className="funding-header">VALUE</div>
+            <div className="funding-row">{fundingSource['Entity Label']}</div>
+            <div className="funding-row">{uniqueSenders}</div>
+            <div className="funding-row">{uniqueReceivers}</div>
+            <div className="funding-row">{fundingSource['SOL Received'].toFixed(4)} SOL</div>
+            <div className="funding-row">{fundingSource['SOL Sent'].toFixed(4)} SOL</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Token Activity */}
+      <div className="token-activity">
+        <h3>Token Activity</h3>
+        <div className="token-tables">
+          <div className="token-table">
+            <h4>Tokens Received</h4>
+            {Object.entries(tokensReceived).map(([token, amount], index) => (
+              <div key={index} className="token-row">
+                <span className="token-name">{token}</span>
+                <span className="token-amount">{amount.toFixed(2)}</span>
               </div>
             ))}
           </div>
-          <p className="section-note">
-            Calculated intention of this wallet address for the 14 available categories.
-          </p>
-        </div>
-        <div className="recommendations">
-          <h3>
-            Recommendations <a href="#" className="show-all">SHOW ALL</a>
-          </h3>
-          <ul className="recommendations-list">
-            {recommendations.map((rec, index) => (
-              <li key={index} className="recommendation-item">
-                <input type="checkbox" checked={rec.checked} readOnly />
-                <span>{rec.name}</span>
-              </li>
+          <div className="token-table">
+            <h4>Tokens Sent</h4>
+            {Object.entries(tokensSent).map(([token, amount], index) => (
+              <div key={index} className="token-row">
+                <span className="token-name">{token}</span>
+                <span className="token-amount">{amount.toFixed(2)}</span>
+              </div>
             ))}
-          </ul>
-          <p className="section-note">
-            Recommended activities based on this wallet’s risk profile.
-          </p>
+          </div>
         </div>
       </div>
 
-      {/* Transaction Categories and Protocols */}
-      <div className="categories-protocols">
-        <div className="transaction-categories">
-          <h3>Transaction Categories</h3>
-          {transactionCategories.map((category, index) => (
-            <div key={index} className="category-row">
-              <span className="category-name">{category.name}</span>
-              <div className="category-bar">
-                <div
-                  className="category-fill"
-                  style={{ width: `${Math.min((category.count / 1000) * 100, 100)}%` }}
-                ></div>
-              </div>
-              <span className="category-count">{category.count}</span>
-            </div>
+      {/* Protocols */}
+      <div className="protocols">
+        <h3>Protocols</h3>
+        <ul className="protocols-list">
+          {protocols.map((protocol, index) => (
+            <li key={index} className="protocol-item">
+              <span className="protocol-icon">🦄</span>
+              <span>{protocol.name}</span>
+            </li>
           ))}
-        </div>
-        <div className="protocols">
-          <h3>Protocols</h3>
-          <ul className="protocols-list">
-            {protocols.map((protocol, index) => (
-              <li key={index} className="protocol-item">
-                {/* Note: Logo is placeholder; you'd need to add actual logo assets */}
-                <span className="protocol-icon">🦄</span>
-                <span>{protocol.name}</span>
-              </li>
-            ))}
-          </ul>
-          <p className="section-note">Protocols used by this wallet.</p>
-        </div>
+        </ul>
+        <p className="section-note">Protocols interacted with by this wallet.</p>
       </div>
 
       <style jsx>{`
-        .wallet-analysis {
+        .wallet-graph-analysis {
           color: var(--text-primary);
         }
         h2 {
@@ -214,6 +166,11 @@ export default function WalletAnalysis({ wallets }) {
           font-weight: 600;
           margin-bottom: 0.5rem;
           color: var(--text-primary);
+        }
+        h4 {
+          font-size: 0.9rem;
+          font-weight: 500;
+          margin-bottom: 0.5rem;
         }
         .wallet-info {
           background-color: var(--card-bg);
@@ -232,12 +189,6 @@ export default function WalletAnalysis({ wallets }) {
         }
         .network-icon {
           font-size: 1.2rem;
-        }
-        .wallet-meta {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 0.5rem;
-          margin-bottom: 0.5rem;
         }
         .network {
           font-size: 0.85rem;
@@ -262,7 +213,8 @@ export default function WalletAnalysis({ wallets }) {
           align-items: center;
           font-size: 0.85rem;
         }
-        .last-checked, .certified {
+        .last-checked,
+        .certified {
           color: var(--text-secondary);
         }
         .certified {
@@ -270,29 +222,7 @@ export default function WalletAnalysis({ wallets }) {
           align-items: center;
           gap: 0.25rem;
         }
-        .action-buttons {
-          display: flex;
-          gap: 0.5rem;
-        }
-        .action-btn {
-          background-color: rgba(255, 255, 255, 0.1);
-          border: 1px solid var(--border);
-          padding: 0.25rem 0.75rem;
-          border-radius: 4px;
-          color: var(--text-primary);
-          font-size: 0.85rem;
-          cursor: pointer;
-          transition: background-color 0.2s ease;
-        }
-        .action-btn:hover {
-          background-color: rgba(255, 255, 255, 0.2);
-        }
-        .action-btn.feedback {
-          background: none;
-          border: none;
-          color: var(--accent-blue);
-        }
-        .wallet-metrics {
+        .activity-metrics {
           display: grid;
           grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
           gap: 1rem;
@@ -309,164 +239,84 @@ export default function WalletAnalysis({ wallets }) {
           font-weight: 500;
           margin-bottom: 0.5rem;
         }
-        .progress-bar {
-          height: 8px;
-          background-color: rgba(255, 255, 255, 0.1);
-          border-radius: 4px;
-          overflow: hidden;
-        }
-        .progress-fill {
-          height: 100%;
-          background-color: var(--accent-blue);
-          transition: width 0.3s ease;
-        }
         .metric-note {
           display: block;
           font-size: 0.8rem;
           color: var(--text-secondary);
           margin-top: 0.25rem;
         }
-        .aml-analysis {
+        .transaction-history,
+        .funding-sources {
           background-color: var(--card-bg);
           padding: 1rem;
           border-radius: 6px;
           border: 1px solid var(--border);
           margin-bottom: 1rem;
         }
-        .aml-table {
+        .history-table,
+        .funding-table {
           display: flex;
           gap: 1rem;
         }
-        .aml-column {
+        .history-column,
+        .funding-column {
           flex: 1;
         }
-        .aml-header {
+        .history-header,
+        .funding-header {
           font-size: 0.85rem;
           font-weight: 600;
           color: var(--accent-blue);
           margin-bottom: 0.5rem;
         }
-        .aml-row {
+        .history-row,
+        .funding-row {
           font-size: 0.85rem;
           color: var(--text-primary);
           padding: 0.25rem 0;
           border-bottom: 1px solid var(--border);
         }
-        .aml-row:last-child {
+        .history-row:last-child,
+        .funding-row:last-child {
           border-bottom: none;
         }
-        .intents-recommendations {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 1rem;
-          margin-bottom: 1rem;
-        }
-        .intents, .recommendations {
+        .token-activity {
           background-color: var(--card-bg);
           padding: 1rem;
           border-radius: 6px;
           border: 1px solid var(--border);
+          margin-bottom: 1rem;
         }
-        .intents-table {
+        .token-tables {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 1rem;
+        }
+        .token-table {
           display: flex;
           flex-direction: column;
-          gap: 0.25rem;
         }
-        .intent-row {
+        .token-row {
           display: flex;
-          align-items: center;
-          gap: 0.5rem;
+          justify-content: space-between;
           padding: 0.25rem 0;
           border-bottom: 1px solid var(--border);
+          font-size: 0.85rem;
         }
-        .intent-row:last-child {
+        .token-row:last-child {
           border-bottom: none;
         }
-        .intent-level {
-          font-size: 0.75rem;
-          font-weight: 600;
-          padding: 0.2rem 0.5rem;
-          border-radius: 4px;
+        .token-name {
+          font-weight: 500;
         }
-        .intent-level-high {
-          background-color: rgba(255, 0, 0, 0.2);
-          color: var(--accent-red);
+        .token-amount {
+          color: var(--text-secondary);
         }
-        .intent-level-med {
-          background-color: rgba(255, 165, 0, 0.2);
-          color: #ffa500; /* Orange */
-        }
-        .intent-level-low {
-          background-color: rgba(0, 255, 0, 0.2);
-          color: var(--accent-green);
-        }
-        .intent-name {
-          font-size: 0.85rem;
-        }
-        .recommendations-list {
-          list-style: none;
-          padding: 0;
-          margin: 0;
-        }
-        .recommendation-item {
-          display: flex;
-          align-items: center;
-          gap: 0.5rem;
-          font-size: 0.85rem;
-          padding: 0.25rem 0;
-          border-bottom: 1px solid var(--border);
-        }
-        .recommendation-item:last-child {
-          border-bottom: none;
-        }
-        .recommendation-item input[type="checkbox"] {
-          accent-color: var(--accent-blue);
-        }
-        .show-all {
-          font-size: 0.85rem;
-          color: var(--accent-blue);
-          text-decoration: none;
-          float: right;
-        }
-        .show-all:hover {
-          text-decoration: underline;
-        }
-        .categories-protocols {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 1rem;
-        }
-        .transaction-categories, .protocols {
+        .protocols {
           background-color: var(--card-bg);
           padding: 1rem;
           border-radius: 6px;
           border: 1px solid var(--border);
-        }
-        .category-row {
-          display: flex;
-          align-items: center;
-          gap: 0.5rem;
-          margin-bottom: 0.5rem;
-        }
-        .category-name {
-          flex: 1;
-          font-size: 0.85rem;
-        }
-        .category-bar {
-          flex: 2;
-          height: 8px;
-          background-color: rgba(255, 255, 255, 0.1);
-          border-radius: 4px;
-          overflow: hidden;
-        }
-        .category-fill {
-          height: 100%;
-          background-color: var(--accent-blue);
-          transition: width 0.3s ease;
-        }
-        .category-count {
-          font-size: 0.85rem;
-          color: var(--text-primary);
         }
         .protocols-list {
           list-style: none;

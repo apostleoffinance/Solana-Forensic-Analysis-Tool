@@ -4,6 +4,8 @@ import requests
 import time
 import os
 from src.metadata import LAMPORT_SCALE, WRAPPED_SOL, NATIVE_SOL
+from src.sql import wallet_balances, token_prices
+
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -12,10 +14,11 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # This r
 TEST_BAL_PATH = os.path.join(ROOT_DIR, 'data', 'raw', 'solana_balance_history_test.csv')
 TEST_PRICES_PATH = os.path.join(ROOT_DIR, 'data', 'raw', 'test_address_prices.csv')
 CACHE_DIR = os.path.join(ROOT_DIR, "data", "raw")
+FLIPSIDE_API_KEY = os.getenv('FLIPSIDE_API_KEY')
 
 VYBE_API_KEY = os.getenv('VYBE_API_KEY')
 
-def get_all_signatures(account_address, helius_api_key, max_pages=20, limit=100):
+def get_all_signatures(account_address, helius_api_key, max_pages=20, limit=100, max_retries=5, sleep_seconds=5):
     url = f"https://mainnet.helius-rpc.com/?api-key={helius_api_key}"
     collected = []
     before = None
@@ -28,30 +31,47 @@ def get_all_signatures(account_address, helius_api_key, max_pages=20, limit=100)
             "params": [account_address, {"limit": limit, **({"before": before} if before else {})}]
         }
 
-        response = requests.post(
-            url,
-            headers={"Content-Type": "application/json"},
-            data=json.dumps(payload)
-        )
+        success = False
+        for attempt in range(max_retries):
+            try:
+                response = requests.post(
+                    url,
+                    headers={"Content-Type": "application/json"},
+                    data=json.dumps(payload),
+                    timeout=10
+                )
 
-        try:
-            data = response.json()
-            if "error" in data:
-                print(f"❌ Error: {data['error']['message']}")
+                data = response.json()
+                if "error" in data:
+                    print(f"❌ Error: {data['error']['message']}")
+                    if attempt < max_retries - 1:
+                        print(f"Retrying... (attempt {attempt+1}/{max_retries})")
+                        time.sleep(sleep_seconds)
+                        continue
+                    else:
+                        return collected  # Exit if max retries hit
+
+                batch = data.get("result", [])
+                if not batch:
+                    return collected  # No more results
+
+                collected.extend(batch)
+                before = batch[-1]["signature"]
+                success = True
                 break
 
-            batch = data["result"]
-            if not batch:
-                break
+            except Exception as e:
+                print(f"Exception: {e}")
+                if attempt < max_retries - 1:
+                    print(f"Retrying after error... (attempt {attempt+1}/{max_retries})")
+                    time.sleep(sleep_seconds)
+                else:
+                    return collected  # Exit if max retries hit
 
-            collected.extend(batch)
-            before = batch[-1]["signature"]  # Move to next batch
+        if not success:
+            break  # Stop paging if failed to fetch this page
 
-            time.sleep(0.5)  # Avoid rate-limits
-
-        except Exception as e:
-            print(f"Exception: {e}")
-            break
+        time.sleep(0.5)  # Rate-limit protection between *successful* pages
 
     return collected
 
@@ -84,12 +104,27 @@ def v0_transactions_all(signatures, helius_api_key):
 
     return all_results
 
-def get_balance_data(account_address=None):
+def get_balance_data(account_address=None, use_cache=False):
     """
     For testing we are using CSV and test address
     """
-    balance_df = pd.read_csv(TEST_BAL_PATH).dropna(how='all')
 
+    if not use_cache:
+
+        balance_data_query = wallet_balances(account_address)
+
+        try:
+
+            balance_df = flipside_api_results(balance_data_query)
+            balance_df.columns = balance_df.columns.str.upper()
+            print(f'balance_df: {balance_df}')
+
+            balance_df.to_csv(TEST_BAL_PATH, index=False)
+        except Exception as e:
+            print(f'e: {e}')
+            balance_df = pd.read_csv(TEST_BAL_PATH).dropna(how='all')
+    else:
+        balance_df = pd.read_csv(TEST_BAL_PATH).dropna(how='all')
     # Strip BOMs or invisible characters from column names
     balance_df.columns = balance_df.columns.str.replace('\ufeff', '', regex=False).str.strip()
 
@@ -106,10 +141,21 @@ def get_balance_data(account_address=None):
 
     return balance_df
 
-def get_price_data():
-    # For now we pull from CSV
-    prices_data = pd.read_csv(TEST_PRICES_PATH).dropna()
-    prices_data['DT'] = pd.to_datetime(pd.to_datetime(prices_data['DT']).dt.strftime('%Y-%m-%d'))
+def get_price_data(token_addresses, start_date, use_cache=False):
+    # For now we pull from 
+    if not use_cache:
+        try:
+            prices_query = token_prices(token_addresses,start_date)
+            prices_data = flipside_api_results(prices_query)
+            print(f'prices_data: {prices_data}')
+            prices_data.to_csv(TEST_PRICES_PATH, index=False)
+        except Exception as e:
+            print(f'e: {e}')
+            prices_data = pd.read_csv(TEST_PRICES_PATH).dropna()
+    else:
+        prices_data = pd.read_csv(TEST_PRICES_PATH).dropna()
+
+    prices_data['dt'] = pd.to_datetime(pd.to_datetime(prices_data['dt']).dt.strftime('%Y-%m-%d'))
     prices_data.columns = prices_data.columns.str.lower()
 
     # Duplicate wrapped SOL rows with native SOL address
@@ -200,4 +246,56 @@ def fetch_address_labels(unique_addresses, chain_id, api_key, delay=0.2):
         time.sleep(delay)  # optional delay to avoid rate limits
 
     return results
+
+def flipside_api_results(query=None, query_run_id=None, attempts=10, delay=30):
+
+    url = "https://api-v2.flipsidecrypto.xyz/json-rpc"
+    headers = {"Content-Type": "application/json", "x-api-key": FLIPSIDE_API_KEY}
+
+    if query_run_id is None:
+        payload = {
+            "jsonrpc": "2.0",
+            "method": "createQueryRun",
+            "params": [{"resultTTLHours": 1, "maxAgeMinutes": 0, "sql": query,
+                        "tags": {"source": "python-script", "env": "production"},
+                        "dataSource": "snowflake-default", "dataProvider": "flipside"}],
+            "id": 1
+        }
+        response = requests.post(url, headers=headers, json=payload)
+        response_data = response.json()
+        if 'error' in response_data:
+            raise Exception(f"Error creating query: {response_data['error']['message']}")
+        query_run_id = response_data.get('result', {}).get('queryRun', {}).get('id')
+        if not query_run_id:
+            raise KeyError(f"Query creation failed. Response: {response_data}")
+
+    for attempt in range(attempts):
+        status_payload = {
+            "jsonrpc": "2.0",
+            "method": "getQueryRunResults",
+            "params": [{"queryRunId": query_run_id, "format": "json", "page": {"number": 1, "size": 10000}}],
+            "id": 1
+        }
+        response = requests.post(url, headers=headers, json=status_payload)
+        resp_json = response.json()
+
+        if 'result' in resp_json and 'rows' in resp_json['result']:
+            all_rows, page_number = [], 1
+            while True:
+                status_payload["params"][0]["page"]["number"] = page_number
+                response = requests.post(url, headers=headers, json=status_payload)
+                resp_json = response.json()
+                rows = resp_json.get('result', {}).get('rows', [])
+                if not rows:
+                    break
+                all_rows.extend(rows)
+                page_number += 1
+            return pd.DataFrame(all_rows)
+
+        if 'error' in resp_json and 'not yet completed' in resp_json['error'].get('message', '').lower():
+            time.sleep(delay)
+        else:
+            raise Exception(f"Error fetching query results: {resp_json}")
+
+    raise TimeoutError(f"Query did not complete after {attempts} attempts.")
     

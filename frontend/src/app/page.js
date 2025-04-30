@@ -1,15 +1,18 @@
 'use client';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
+import { DataProvider } from './DataContext';
 import cytoscape from 'cytoscape';
 import popper from 'cytoscape-popper';
 
 // Register popper extension with Cytoscape
 cytoscape.use(popper);
 
+
 export default function Home() {
   const containerRef = useRef();
   const heroNetworkRef = useRef();
+
 
   useEffect(() => {
     console.log('Home component rendered');

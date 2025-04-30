@@ -229,7 +229,6 @@ def summarize_transaction(tx, wallet):
     return rows
 
 #Helper function to create row from helius and flipside data
-
 def create_row(tx, wallet, balance_df):
     """
     Takes in a tx from helius data, a wallet address, and balance timeseries data from Flipside.  Returns a df row for analysis 
@@ -246,6 +245,8 @@ def create_row(tx, wallet, balance_df):
     token_tx_df['program_id'] = instructions_data.get('programId')
     token_tx_df['tx_status'] = tx_status #if no tx error, can assume it succeeded so we use binary 1 and 0 instead of just leaving nan
 
+    balance_df.columns = balance_df.columns.str.upper()
+
     filtered_balance_timeseries = balance_df[['PRE_BALANCE','BALANCE','SYMBOL','NAME','MINT','TX_ID']].rename(columns={'MINT':'token_address'})
     filtered_balance_timeseries = filtered_balance_timeseries.rename(columns={'TX_ID':'signature'})
 
@@ -256,19 +257,41 @@ def create_row(tx, wallet, balance_df):
         
     return combined_df 
 
-def construct_tx_dataset(parsed_transaction_history,address,balance_df):
+def clean_wallet_addresses(df):
+    for col in ['sender', 'receiver', 'counterparty']:
+        if col in df.columns:
+            df[col] = df[col].astype(str).str.strip()  # strip spaces
+            df = df[~df[col].isin(["", "None", "nan", "NaN"])]
+            df = df[~df[col].isnull()] 
+    return df
+
+def construct_tx_dataset(parsed_transaction_history,prices_data,address,balance_df):
     tx_level_data = pd.DataFrame()
+
+    print(f'address: {address}')
+    print(f'prices_data: {prices_data}')
+    print(f'balance_df: {balance_df}')
 
     for i in parsed_transaction_history:
         row = create_row(i, address, balance_df)
         tx_level_data = pd.concat([tx_level_data, row])
 
+    print(f'tx_level_data: {tx_level_data.columns}\n{tx_level_data}')
+
+    tx_level_data = clean_wallet_addresses(tx_level_data)
+
+    # breakpoint()
+
+    # tx_level_data['timestamp'] = tx_level_data['dt']
+
     tx_level_data['timestamp'] = pd.to_datetime(tx_level_data['timestamp'], unit='s')
     tx_level_data.rename(columns={'BALANCE':'POST_BALANCE','NAME':'TOKEN_NAME'},inplace=True)
-
-    prices_data = get_price_data()# Ideally we add date param which is min dt in tx_level_data
+    
+    print(f'prices_data: {prices_data}')
 
     tx_level_data = add_price_data(tx_level_data, prices_data)
+
+    print(f'tx_level_data in construct dataset: {tx_level_data}')
 
     return tx_level_data
 
@@ -356,6 +379,38 @@ def jsonify_safe(obj):
         return obj.isoformat()
     else:
         return obj
+    
+def merge_datasets(tx_level_data_1, wallet_analysis_df):
+    # Drop any previous 'sender_entity' and 'receiver_entity' columns if they exist
+    tx_level_data=tx_level_data_1.copy()
+    tx_level_data = tx_level_data.drop(columns=['sender_entity', 'receiver_entity'], errors='ignore')
+
+    tx_level_data = tx_level_data.merge(
+        wallet_analysis_df[['wallet_address', 'entity_label']].rename(columns={
+            'wallet_address': 'sender',
+            'entity_label': 'sender_entity'
+        }),
+        how='left',
+        on='sender'
+    )
+
+    # Clean merge for receiver
+    tx_level_data = tx_level_data.merge(
+        wallet_analysis_df[['wallet_address', 'entity_label']].rename(columns={
+            'wallet_address': 'receiver',
+            'entity_label': 'receiver_entity'
+        }),
+        how='left',
+        on='receiver'
+    )
+
+    tx_level_data['entity_label'] = tx_level_data['sender_entity'].fillna(tx_level_data['receiver_entity'])
+
+    tx_level_data.drop(columns=['sender_entity', 'receiver_entity'], inplace=True)
+
+    tx_level_data = tx_level_data[[col for col in tx_level_data.columns if not col.endswith('_x') and not col.endswith('_y')]]
+
+    return tx_level_data
 
 
 

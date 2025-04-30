@@ -1,15 +1,10 @@
 /** @type {import('next').NextConfig} */
 
-const isProd = process.env.NODE_ENV === 'production';
-
 const nextConfig = {
-    output: 'export', // Enables static export
-    basePath: isProd ? '/Solana-Forensic-Analysis-Tool' : '', // Replace <repo-name> with your GitHub repository name
-    assetPrefix: isProd ? '/Solana-Forensic-Analysis-Tool' : '', // Ensures assets are loaded correctly
-    images: {
-      unoptimized: true, // Disables Next.js image optimization (not supported in static export)
-    },
-    trailingSlash: true, // Adds trailing slashes to URLs (helps with GitHub Pages routing)
-  };
+  images: {
+    domains: [], // Add any external image domains here if needed
+  },
+  
+};
 
 export default nextConfig;

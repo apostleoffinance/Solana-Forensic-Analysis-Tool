@@ -11,6 +11,17 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # This r
 METASLEUTH_PATH = os.path.join(ROOT_DIR, 'data', 'raw', 'metasleuth_labels.json')
 RAW_DATA_PATH = os.path.join(ROOT_DIR, 'data', 'raw')
 
+# Apply labeling logic
+def label_entity(row):
+    if row['sent_tx_count'] > 100 and row['received_tx_count'] > 100 and (row['unique_receivers'] + row['unique_senders']) > 50:
+        return 'Exchange'
+    elif row['sent_tx_count'] > 50 and row['received_tx_count'] < 10 and row['unique_receivers'] > 30:
+        return 'Project Wallet'
+    elif row['sent_tx_count'] > 10 and row['received_tx_count'] > 10 and row['total_sent'] < 0.01:
+        return 'Suspicious'
+    else:
+        return 'Normal User'
+
 def load_flipside_labels():
     flipside_files = ['solana_cex_labels','solana_chadmin','solana_dapp_labels','solana_defi_labels']
     flipside_labels_df = pd.DataFrame()
@@ -118,7 +129,35 @@ def add_entity_labels(df_og, address):
     
     df['wallet_entity_label'] = combined_address_label_map.get(address.lower(), 'Unknown Entity')
 
-    return df
+    # Group by sender and receiver to get wallet behaviors
+    send_stats = df[df['direction'] == 'sent'].groupby('sender').agg({
+        'token_amount': 'sum',
+        'signature': 'count',
+        'receiver_name': pd.Series.nunique
+    }).rename(columns={
+        'token_amount': 'total_sent',
+        'signature': 'sent_tx_count',
+        'receiver_name': 'unique_receivers'
+    })
+
+    receive_stats = df[df['direction'] == 'received'].groupby('sender').agg({
+        'token_amount': 'sum',
+        'signature': 'count',
+        'receiver_name': pd.Series.nunique
+    }).rename(columns={
+        'token_amount': 'total_received',
+        'signature': 'received_tx_count',
+        'receiver_name': 'unique_senders'
+    })
+
+    # Combine both
+    wallet_stats = send_stats.join(receive_stats, how='outer').fillna(0)
+
+    wallet_stats['entity_label'] = wallet_stats.apply(label_entity, axis=1)
+
+    labeled_entities_df = wallet_stats.reset_index().rename(columns={'sender': 'wallet_address'})
+
+    return df, labeled_entities_df
 
 
 
