@@ -40,7 +40,8 @@ def token_prices(token_addresses, start_date, network='solana'):
     GROUP BY 
         1, 2, 3
     ORDER BY 
-        dt DESC, symbol;
+        dt asc, symbol
+    LIMIT 10000
     """
 
     return query
@@ -58,7 +59,8 @@ def wallet_balances(user_address):
         select block_timestamp, owner, mint, pre_balance, balance, tx_id, SUCCEEDED, m.symbol, m.name
         from balance_data b
         left join solana.price.ez_asset_metadata m on b.MINT = m.TOKEN_ADDRESS
-        order by block_timestamp desc
+        order by block_timestamp asc
+        LIMIT 10000
 
 
 

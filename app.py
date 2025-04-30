@@ -40,13 +40,13 @@ def run_analysis_logic(address, job_id):
     try:
         print(f'running analysis for {address}')
         print(f'Getting Parsed History')
-        parsed_transaction_history = get_comprehensive_tx_history(address, HELIUS_API_KEY, use_cache=use_cache)
+        parsed_transaction_history = retry_call(get_comprehensive_tx_history, 3, 2, address, HELIUS_API_KEY, use_cache=use_cache)
         print(f'Getting Balance Data')
-        balance_df = get_balance_data(address, use_cache=use_cache)
+        balance_df = retry_call(get_balance_data, 3, 2, address, use_cache=use_cache)
         token_portfolio = balance_df['MINT'].unique()
         start_date = pd.to_datetime(balance_df['BLOCK_TIMESTAMP'].min()).strftime('%Y-%m-%d %H:%M:%S')
         print(f'Getting Price Data')
-        prices_data = get_price_data(token_portfolio, start_date, use_cache=use_cache)
+        prices_data = retry_call(get_price_data, 3, 2, token_portfolio, start_date, use_cache=use_cache)
         print(f'Constructing Dataset')
         tx_level_data = construct_tx_dataset(parsed_transaction_history, prices_data, address, balance_df)
         print(f'Adding labels')
@@ -78,14 +78,14 @@ def run_analysis_logic(address, job_id):
         json_results = jsonify_safe(results)
 
         # Save result to per-job file
-        job_path = os.path.join('data', 'processed', f'{job_id}.json')
+        job_path = os.path.join('jobs', 'processed', f'{job_id}.json')
         with open(job_path, 'w') as f:
             json.dump(json_results, f)
 
     except Exception as e:
         print(f'[Threaded Analysis Error]: {e}')
         # Save error so frontend knows it failed
-        error_path = os.path.join('data', 'processed', f'{job_id}_error.txt')
+        error_path = os.path.join('jobs', 'processed', f'{job_id}_error.txt')
         with open(error_path, 'w') as f:
             f.write(str(e))
 
@@ -107,8 +107,8 @@ def create_app():
             return jsonify({"error": "Must Pass Address"}), 400
 
         job_id = address
-        result_path = os.path.join('data', 'processed', f'{job_id}.json')
-        error_path = os.path.join('data', 'processed', f'{job_id}_error.txt')
+        result_path = os.path.join('jobs', 'processed', f'{job_id}.json')
+        error_path = os.path.join('jobs', 'processed', f'{job_id}_error.txt')
 
         # If cached result exists, return it immediately
         if os.path.exists(result_path):
@@ -136,8 +136,8 @@ def create_app():
         if not job_id:
             return jsonify({"error": "Missing job_id"}), 400
 
-        result_path = os.path.join('data', 'processed', f'{job_id}.json')
-        error_path = os.path.join('data', 'processed', f'{job_id}_error.txt')
+        result_path = os.path.join('jobs', 'processed', f'{job_id}.json')
+        error_path = os.path.join('jobs', 'processed', f'{job_id}_error.txt')
 
         if os.path.exists(result_path):
             with open(result_path) as f:
@@ -151,6 +151,28 @@ def create_app():
 
         else:
             return jsonify({"status": "processing"}), 202
+    
+    @app.route('/api/clear_cache', methods=['GET'])
+    def clear_cache():
+        cleared = []
+        errors = []
+        cache_path = os.path.join('jobs', 'processed')
+
+        for filename in os.listdir(cache_path):
+            file_path = os.path.join(cache_path, filename)
+            try:
+                if os.path.isfile(file_path):
+                    os.remove(file_path)
+                    cleared.append(filename)
+            except Exception as e:
+                print(f"Error deleting file {file_path}: {e}")
+                errors.append({"file": filename, "error": str(e)})
+
+        return jsonify({
+            "status": "cache_cleared",
+            "files_deleted": cleared,
+            "errors": errors
+        }), 200
 
     return app
         

@@ -1,16 +1,25 @@
 # Local
 
+## Clear cache
+
+curl -X GET "http://127.0.0.1:5025/api/clear_cache"
+
 ## Analyze an address
 
 curl -H "Content-Type: application/json" -X POST -d "{\"address\": \"AGPZnBZUxmhAtcp8XjT4n8bCia9dEYhhm16M2sfFvmTU\"}" http://127.0.0.1:5025/api/analyze_address
 
 curl -H "Content-Type: application/json" -X POST -d "{\"address\": \"CoaKnxNQCJ91FyyNqxmwxEHwzdw8YHmgF3ZpLNjf1TzG\"}" http://127.0.0.1:5025/api/analyze_address
 
+curl -H "Content-Type: application/json" -X POST -d "{\"address\": \"8psNvWTrdNTiVRNzAgsou9kETXNJm2SXZyaKuJraVRtf\"}" http://127.0.0.1:5025/api/analyze_address 
+
 ## Poll the address for results
 
 curl -X GET "http://127.0.0.1:5025/api/get_results?job_id=CoaKnxNQCJ91FyyNqxmwxEHwzdw8YHmgF3ZpLNjf1TzG" 
 
 curl -X GET "http://127.0.0.1:5025/api/get_results?job_id=AGPZnBZUxmhAtcp8XjT4n8bCia9dEYhhm16M2sfFvmTU"
+
+curl -X GET "http://127.0.0.1:5025/api/get_results?job_id=8psNvWTrdNTiVRNzAgsou9kETXNJm2SXZyaKuJraVRtf"
+
 
 # Pythonanywhere
 
