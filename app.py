@@ -107,8 +107,23 @@ def create_app():
             return jsonify({"error": "Must Pass Address"}), 400
 
         job_id = address
-        executor.submit(run_analysis_logic, address, job_id)
+        result_path = os.path.join('data', 'processed', f'{job_id}.json')
+        error_path = os.path.join('data', 'processed', f'{job_id}_error.txt')
 
+        # If cached result exists, return it immediately
+        if os.path.exists(result_path):
+            with open(result_path) as f:
+                result = json.load(f)
+            return jsonify(result), 200
+
+        # If a previous error occurred, return it
+        if os.path.exists(error_path):
+            with open(error_path) as f:
+                error_msg = f.read()
+            return jsonify({"error": error_msg}), 500
+
+        # If not cached, start new analysis in background
+        executor.submit(run_analysis_logic, address, job_id)
         return jsonify({
             "status": "processing",
             "job_id": job_id,
