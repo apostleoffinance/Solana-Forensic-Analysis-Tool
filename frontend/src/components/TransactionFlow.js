@@ -19,33 +19,100 @@ const createSpriteTexture = (text) => {
   return canvas;
 };
 
+// Function to transform new tx_graph schema to old format
+const transformTxGraph = (tx_graph, wallet_analysis) => {
+  if (!tx_graph || !Array.isArray(tx_graph)) {
+    return { nodes: {}, edges: [] };
+  }
+
+  const nodes = {};
+  const edges = [];
+  const queriedWallet = wallet_analysis?.wallet_address || '';
+
+  // Process each cluster
+  tx_graph.forEach((cluster) => {
+    const { wallets_in_cluster, central_wallets, cluster_type, flags, total_transactions } = cluster;
+
+    // Create nodes for all wallets in the cluster
+    wallets_in_cluster.forEach((address) => {
+      const isCentral = central_wallets.includes(address);
+      const isQueried = address === queriedWallet;
+      const label = isCentral ? (cluster_type || flags?.[0] || 'Central Wallet') : 'Unknown Address';
+
+      nodes[address] = {
+        id: address,
+        label,
+        amount_usd_received: isQueried ? wallet_analysis.transaction_history.total_sol_volume_received * 100 : 0, // Approximate USD (SOL * 100)
+        amount_usd_sent: isQueried ? wallet_analysis.transaction_history.total_sol_volume_sent * 100 : 0,
+      };
+    });
+
+    // Create edges: Connect each non-central wallet to central wallets
+    wallets_in_cluster.forEach((address) => {
+      if (!central_wallets.includes(address)) {
+        central_wallets.forEach((central) => {
+          edges.push({
+            from: address,
+            to: central,
+            value: total_transactions / wallets_in_cluster.length / central_wallets.length || 0, // Distribute transactions
+          });
+        });
+      }
+    });
+
+    // Add edges between central wallets (if more than one)
+    if (central_wallets.length > 1) {
+      for (let i = 0; i < central_wallets.length - 1; i++) {
+        for (let j = i + 1; j < central_wallets.length; j++) {
+          edges.push({
+            from: central_wallets[i],
+            to: central_wallets[j],
+            value: total_transactions / central_wallets.length || 0,
+          });
+        }
+      }
+    }
+  });
+
+  return { nodes, edges };
+};
+
 // TransactionFlow Component
-const TransactionFlow = ({ tx_graph }) => {
+const TransactionFlow = ({ tx_graph, wallet_analysis }) => {
   const [selectedNode, setSelectedNode] = useState(null);
   const [addressFilter, setAddressFilter] = useState(''); // Filter by address or label
   const [amountFilter, setAmountFilter] = useState(0); // Filter by minimum transaction amount
 
-  if (!tx_graph || !tx_graph.nodes || !tx_graph.edges) {
+  // Transform the new tx_graph schema
+  const transformedGraph = useMemo(() => transformTxGraph(tx_graph, wallet_analysis), [tx_graph, wallet_analysis]);
+
+  if (!transformedGraph.nodes || !transformedGraph.edges) {
     return <div>Invalid transaction graph data</div>;
   }
 
   // Determine if there is something to filter
   const hasFilter = addressFilter.trim() !== '' || amountFilter > 0;
 
-  // Calculate hacker address (same logic as in Graph component)
+  // Calculate address volume for visualization
   const addressVolume = useMemo(() => {
     const volumeMap = new Map();
-    tx_graph.edges.forEach(edge => {
+    transformedGraph.edges.forEach((edge) => {
       const value = Number(edge.value) || 0;
       volumeMap.set(edge.from, (volumeMap.get(edge.from) || 0) + value);
       volumeMap.set(edge.to, (volumeMap.get(edge.to) || 0) + value);
     });
     return volumeMap;
-  }, [tx_graph.edges]);
+  }, [transformedGraph.edges]);
 
+  // Identify hacker address (use central wallet or highest volume)
   const hackerAddress = useMemo(() => {
+    // Prefer central wallet from the first cluster
+    const centralWallet = tx_graph?.[0]?.central_wallets?.[0];
+    if (centralWallet) return centralWallet;
+
+    // Fallback to highest volume address
     let max = 0;
-    let hacker = tx_graph.edges.length > 0 ? tx_graph.edges[0]?.to : null;
+    let hacker = transformedGraph.edges.length > 0 ? transformedGraph.edges[0]?.to : null;
     addressVolume.forEach((volume, address) => {
       if (volume > max) {
         max = volume;
@@ -53,11 +120,11 @@ const TransactionFlow = ({ tx_graph }) => {
       }
     });
     return hacker;
-  }, [addressVolume, tx_graph.edges]);
+  }, [addressVolume, transformedGraph.edges, tx_graph]);
 
   // Create filtered lists
-  let filteredNodeList = tx_graph.nodes;
-  let filteredEdgeList = tx_graph.edges;
+  let filteredNodeList = transformedGraph.nodes;
+  let filteredEdgeList = transformedGraph.edges;
 
   if (hasFilter) {
     const filteredAddresses = new Set();
@@ -66,7 +133,7 @@ const TransactionFlow = ({ tx_graph }) => {
     // Step 1: Address Filter - Find nodes that match the address or label
     if (addressFilter.trim() !== '') {
       const searchText = addressFilter.toLowerCase();
-      const matchingNodes = Object.entries(tx_graph.nodes).filter(([address, node]) =>
+      const matchingNodes = Object.entries(transformedGraph.nodes).filter(([address, node]) =>
         address.toLowerCase().includes(searchText) || node.label.toLowerCase().includes(searchText)
       );
 
@@ -76,7 +143,7 @@ const TransactionFlow = ({ tx_graph }) => {
       });
 
       // Include all edges connected to these nodes
-      tx_graph.edges.forEach(edge => {
+      transformedGraph.edges.forEach((edge) => {
         if (filteredAddresses.has(edge.from) || filteredAddresses.has(edge.to)) {
           filteredEdges.add(JSON.stringify(edge));
           filteredAddresses.add(edge.from);
@@ -87,7 +154,7 @@ const TransactionFlow = ({ tx_graph }) => {
 
     // Step 2: Amount Filter - Include edges that match the amount filter
     if (amountFilter > 0) {
-      tx_graph.edges.forEach(edge => {
+      transformedGraph.edges.forEach((edge) => {
         const value = Number(edge.value) || 0;
         if (value >= amountFilter) {
           filteredEdges.add(JSON.stringify(edge));
@@ -105,12 +172,12 @@ const TransactionFlow = ({ tx_graph }) => {
       // Create filtered node list
       filteredNodeList = Object.fromEntries(
         [...filteredAddresses]
-          .filter(address => tx_graph.nodes[address])
-          .map(address => [address, tx_graph.nodes[address]])
+          .filter((address) => transformedGraph.nodes[address])
+          .map((address) => [address, transformedGraph.nodes[address]])
       );
 
       // Convert filteredEdges back to array of edge objects
-      filteredEdgeList = [...filteredEdges].map(edge => JSON.parse(edge));
+      filteredEdgeList = [...filteredEdges].map((edge) => JSON.parse(edge));
     }
   }
 
@@ -161,16 +228,22 @@ const TransactionFlow = ({ tx_graph }) => {
               background: selectedNode.id === hackerAddress ? '#E11D48' : '#3B82F6', // Red for hacker, blue for others
             }}
           >
-            <h3>
-              {selectedNode.label !== 'Unknown' ? selectedNode.label : 'Address'}
-            </h3>
+            <h3>{selectedNode.label !== 'Unknown Address' ? selectedNode.label : 'Address'}</h3>
             <button onClick={() => setSelectedNode(null)}>×</button>
           </div>
           <div className="info-card-content">
-            <p><strong>Address:</strong> {selectedNode.id}</p>
-            <p><strong>Label:</strong> {selectedNode.label}</p>
-            <p><strong>USD Received:</strong> ${selectedNode.amount_usd_received.toFixed(2)}</p>
-            <p><strong>USD Sent:</strong> ${selectedNode.amount_usd_sent.toFixed(2)}</p>
+            <p>
+              <strong>Address:</strong> {selectedNode.id}
+            </p>
+            <p>
+              <strong>Label:</strong> {selectedNode.label}
+            </p>
+            <p>
+              <strong>USD Received:</strong> ${selectedNode.amount_usd_received.toFixed(2)}
+            </p>
+            <p>
+              <strong>USD Sent:</strong> ${selectedNode.amount_usd_sent.toFixed(2)}
+            </p>
           </div>
         </div>
       )}
@@ -256,7 +329,7 @@ const Graph = ({ tx_graph, setSelectedNode, hackerAddress }) => {
   // Calculate address volume for visualization
   const addressVolume = useMemo(() => {
     const volumeMap = new Map();
-    edges.forEach(edge => {
+    edges.forEach((edge) => {
       const value = Number(edge.value) || 0;
       volumeMap.set(edge.from, (volumeMap.get(edge.from) || 0) + value);
       volumeMap.set(edge.to, (volumeMap.get(edge.to) || 0) + value);
@@ -266,7 +339,7 @@ const Graph = ({ tx_graph, setSelectedNode, hackerAddress }) => {
 
   const maxVolume = useMemo(() => {
     let max = 0;
-    addressVolume.forEach(volume => {
+    addressVolume.forEach((volume) => {
       if (volume > max) max = volume;
     });
     return max;
@@ -293,7 +366,7 @@ const Graph = ({ tx_graph, setSelectedNode, hackerAddress }) => {
           radius * Math.cos(phi)
         )
       );
-    };
+    }
     return posArray;
   }, [addresses]);
 
