@@ -1,0 +1,6 @@
+docker build -t digitalgold1856/solana_analysis_api .
+docker push digitalgold1856/solana_analysis_api
+
+for /f %i in ('powershell -Command "Get-Date -Format yyyyMMddHHmmss"') do set TAG=v0.1.2-%i
+docker tag digitalgold1856/solana_analysis_api digitalgold1856/solana_analysis_api:%TAG%
+docker push digitalgold1856/solana_analysis_api:%TAG%

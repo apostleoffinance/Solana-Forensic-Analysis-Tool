@@ -1,5 +1,0 @@
-dotenv
-flask
-pandas
-numpy 
-requests

@@ -1,27 +1,98 @@
 from flask import Flask, render_template, request, jsonify
 from src.clustering import create_tx_graph
-from src.data_fetching import get_balance_data
+from src.data_fetching import get_balance_data,flipside_api_results, get_price_data
 from src.data_processing import (get_comprehensive_tx_history, construct_tx_dataset, 
                                  get_summary_stats, jsonify_safe, merge_datasets)
 from src.entity_labeling import add_entity_labels
 from src.wallet_analysis import WalletAnalysis
+
+from concurrent.futures import ThreadPoolExecutor
+
 import os
 import json
+import time
 import pandas as pd
 from dotenv import load_dotenv
+import uuid
 
 load_dotenv()
 
 HELIUS_API_KEY = os.getenv('HELIUS_API_KEY')
 
-use_cache = True # For testing
+use_cache = False # For testing
 test_address = 'AGPZnBZUxmhAtcp8XjT4n8bCia9dEYhhm16M2sfFvmTU'
 
 ROOT_DIR = os.getcwd()
 DATA_DIR = os.path.join(ROOT_DIR, 'data', 'processed', 'backend_response.json')
 
+def retry_call(fn, retries=3, delay=2, *args, **kwargs):
+    last_exception = None
+    for attempt in range(retries):
+        try:
+            return fn(*args, **kwargs)
+        except Exception as e:
+            print(f"[Retry {attempt+1}/{retries}] {fn.__name__} failed: {e}")
+            last_exception = e
+            time.sleep(delay)
+    raise last_exception
+
+def run_analysis_logic(address, job_id):
+    try:
+        print(f'running analysis for {address}')
+        print(f'Getting Parsed History')
+        parsed_transaction_history = get_comprehensive_tx_history(address, HELIUS_API_KEY, use_cache=use_cache)
+        print(f'Getting Balance Data')
+        balance_df = get_balance_data(address, use_cache=use_cache)
+        token_portfolio = balance_df['MINT'].unique()
+        start_date = pd.to_datetime(balance_df['BLOCK_TIMESTAMP'].min()).strftime('%Y-%m-%d %H:%M:%S')
+        print(f'Getting Price Data')
+        prices_data = get_price_data(token_portfolio, start_date, use_cache=use_cache)
+        print(f'Constructing Dataset')
+        tx_level_data = construct_tx_dataset(parsed_transaction_history, prices_data, address, balance_df)
+        print(f'Adding labels')
+        tx_level_data_complete, wallet_stats = add_entity_labels(tx_level_data, address)
+        tx_level_data_complete = merge_datasets(tx_level_data_complete, wallet_stats)
+        print(f'Creating tx graph')
+        tx_graph = create_tx_graph(tx_level_data_complete)
+        print(f'Getting summary stats')
+        wallet_analysis_df = get_summary_stats(tx_level_data_complete, address)
+        wallet_analysis_obj = WalletAnalysis(wallet_analysis_df)
+
+        funding_sources = wallet_analysis_obj.track_funding_sources_and_flow(address).astype(object).where(pd.notnull).to_dict(orient='records')
+        transaction_history = wallet_analysis_obj.transaction_history(address)
+        activity_patterns = wallet_analysis_obj.key_activity_patterns_and_risk_factors(address)
+
+        complete_wallet_analysis = {
+            'funding_sources': funding_sources,
+            'transaction_history': transaction_history,
+            'activity_patterns': activity_patterns
+        }
+
+        results = {
+            'wallet_analysis': complete_wallet_analysis,
+            'tx_graph': tx_graph
+        }
+
+        print(f'Writing results to {job_id}.json')
+
+        json_results = jsonify_safe(results)
+
+        # Save result to per-job file
+        job_path = os.path.join('data', 'processed', f'{job_id}.json')
+        with open(job_path, 'w') as f:
+            json.dump(json_results, f)
+
+    except Exception as e:
+        print(f'[Threaded Analysis Error]: {e}')
+        # Save error so frontend knows it failed
+        error_path = os.path.join('data', 'processed', f'{job_id}_error.txt')
+        with open(error_path, 'w') as f:
+            f.write(str(e))
+
 def create_app():
     app = Flask(__name__)
+
+    executor = ThreadPoolExecutor(max_workers=4) 
 
     @app.route('/')
     def home():
@@ -32,91 +103,43 @@ def create_app():
         data = request.get_json()
         address = data.get('address')
 
-        if address is not test_address:
-            address = test_address
-
-        #Should do further validation that address is valid solana address
-
         if not address:
             return jsonify({"error": "Must Pass Address"}), 400
-        
-        try:
-            parsed_transaction_history = get_comprehensive_tx_history(address, HELIUS_API_KEY, use_cache=use_cache)
-        except Exception as e:
-            print(f'e: {e}')
-            return jsonify({"error": str(e)}), 500
-        
-        try:
-            balance_df = get_balance_data(address) # for now it returns CSV data for test_address
-        except Exception as e:
-            print(f'e: {e}')
-            return jsonify({"error": str(e)}), 500
-        
-        tx_level_data = construct_tx_dataset(parsed_transaction_history,address,balance_df)
 
-        print(f'tx_level_data after construct dataset: {tx_level_data}')
+        job_id = address
+        executor.submit(run_analysis_logic, address, job_id)
 
-        tx_level_data_complete, wallet_stats = add_entity_labels(tx_level_data, address) # turn to dict
+        return jsonify({
+            "status": "processing",
+            "job_id": job_id,
+            "message": f"Started analysis for {address}"
+        }), 202
 
-        print(f'tx_level_data_complete after entity labeling: {tx_level_data_complete}')
-        print(f'wallet_stats: {wallet_stats}')
+    @app.route('/api/get_results', methods=['GET'])
+    def get_results():
+        job_id = request.args.get('job_id')
+        if not job_id:
+            return jsonify({"error": "Missing job_id"}), 400
 
-        tx_level_data_complete = merge_datasets(tx_level_data_complete, wallet_stats)
+        result_path = os.path.join('data', 'processed', f'{job_id}.json')
+        error_path = os.path.join('data', 'processed', f'{job_id}_error.txt')
 
-        tx_graph = create_tx_graph(tx_level_data_complete)
+        if os.path.exists(result_path):
+            with open(result_path) as f:
+                result = json.load(f)
+            return jsonify(result)
 
-        print(F'tx_graph: {tx_graph}')
+        elif os.path.exists(error_path):
+            with open(error_path) as f:
+                error_msg = f.read()
+            return jsonify({"error": error_msg}), 500
 
-        wallet_analysis_df = get_summary_stats(tx_level_data_complete, address)
+        else:
+            return jsonify({"status": "processing"}), 202
 
-        print(f'wallet_analysis_df: {wallet_analysis_df}')
-
-        wallet_analysis_obj = WalletAnalysis(wallet_analysis_df)
-
-        funding_sources = wallet_analysis_obj.track_funding_sources_and_flow(address).astype(object).where(pd.notnull).to_dict(orient='records')
-
-        print("Funding Sources and Asset Flow:") 
-        print(funding_sources)
-
-        transaction_history = wallet_analysis_obj.transaction_history(address)
-        print("\nTransaction History:")
-        print(transaction_history)
-
-        activity_patterns = wallet_analysis_obj.key_activity_patterns_and_risk_factors(address)
-        print("\nActivity Patterns and Risk Factors:")
-        print(activity_patterns)
-
-        #Where do we add wallet analysis?
-
-        print('funding_sources', type(funding_sources))
-        print('transaction_history', type(transaction_history))
-        print('activity_patterns', type(activity_patterns))
-
-        complete_wallet_analysis = {
-            'funding_sources':funding_sources,
-            'transaction_history': transaction_history,
-            'activity_patterns':activity_patterns
-        }
-
-        results = {
-            'wallet_analysis': complete_wallet_analysis,
-            'tx_graph': tx_graph
-        }
-
-        print('complete_wallet_analysis', type(complete_wallet_analysis))
-        print('tx_graph', type(tx_graph))
-        print('results', type(results))
-
-        json_results = jsonify_safe(results)
-
-        with open(DATA_DIR, 'w') as f:
-            json.dump(json_results, f)
-
-        return jsonify(json_results)
-    
     return app
         
 if __name__ == "__main__":
     print('Starting Flask app...')
     app = create_app()
-    app.run(debug=True, use_reloader=False, port=5025) #use a different port?
+    app.run(host="0.0.0.0", debug=True, port=5025)
