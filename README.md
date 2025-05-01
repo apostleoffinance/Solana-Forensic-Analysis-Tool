@@ -8,8 +8,7 @@ A full-stack blockchain forensics platform for analyzing Solana on-chain activit
 
 ## 🚀 Live Demo
 
-🌐 [View the Deployed Tool](https://solana-forensic-analysis-tool-xi.vercel.app/)  
-📹 [Watch Demo Video](https://your-demo-video-link.com)
+🌐 [View the Deployed Tool](https://solana-forensic-analysis-tool-xi.vercel.app/) 
 
 ---
 
@@ -137,7 +136,7 @@ npm run dev
 > **🕵️‍♂️ JUST LAUNCHED: Solana Forensic Tool 🔎**  
 > Visualize transactions, trace stolen funds, cluster suspicious behavior, and label malicious wallets on Solana — all in one platform!  
 > Built with @heliuslabs @vybe_xyz @flipsidecrypto  
-> 👉 [Live Demo](https://your-live-link.com)  
+> 👉 [Live Demo](https://solana-forensic-analysis-tool-xi.vercel.app/)  
 > #Solana #CryptoSecurity #OnchainForensics
 
 ---
