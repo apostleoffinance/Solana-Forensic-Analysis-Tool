@@ -161,5 +161,3 @@ PRs and Issues are welcome! If you’d like to collaborate, suggest features, or
 MIT License. See `LICENSE.md` for details.
 
 ---
-
-Would you like help generating a clean architecture diagram or a markdown version of the forensic report?
